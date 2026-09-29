@@ -1,0 +1,2 @@
+export type CompanyContext = { name: string; description: string; descriptionSource: 'post' | 'agent' | null; logoPath: string | null; logoUrl: string | null; accent: string | null };
+export async function companyContext(_org: string): Promise<CompanyContext> { return { name: 'Sua empresa', description: 'Consultoria de negócios', descriptionSource: null, logoPath: null, logoUrl: null, accent: '#506d48' }; }

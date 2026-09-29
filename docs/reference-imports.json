@@ -1,0 +1,209 @@
+{
+  "reference/nextjs/lib/instagram/brand.ts": [
+    "@/lib/agent-engine/db/request-pool",
+    "@/lib/branding/logo",
+    "@/lib/branding/logo-arquivo",
+    "@/lib/branding/organizacao",
+    "@/lib/supabase/admin"
+  ],
+  "reference/nextjs/lib/instagram/store.ts": [
+    "./schema",
+    "@/lib/agent-engine/db/request-pool",
+    "@/lib/supabase/admin"
+  ],
+  "reference/nextjs/lib/instagram/generate-post.ts": [
+    "./ai",
+    "./brand",
+    "./schema",
+    "@/lib/agent-engine/db/request-pool",
+    "@/lib/supabase/admin"
+  ],
+  "reference/nextjs/app/api/v1/instagram/route.ts": [
+    "@/lib/agent-engine/db/request-pool",
+    "@/lib/ai/dispatcher/rate-limit",
+    "@/lib/api/wrappers",
+    "@/lib/audit",
+    "@/lib/auth/require-role",
+    "@/lib/impersonate/support",
+    "@/lib/instagram/ai",
+    "@/lib/instagram/generate-post",
+    "@/lib/instagram/schema",
+    "@/lib/instagram/store",
+    "node:crypto",
+    "zod"
+  ],
+  "reference/nextjs/app/api/v1/instagram/insights/route.ts": [
+    "@/lib/ai/dispatcher/rate-limit",
+    "@/lib/api/wrappers",
+    "@/lib/auth/require-role",
+    "@/lib/channels/social/instagram-insights",
+    "node:crypto",
+    "zod"
+  ],
+  "reference/nextjs/app/api/v1/instagram/publish/route.ts": [
+    "@/lib/agent-engine/db/request-pool",
+    "@/lib/ai/dispatcher/rate-limit",
+    "@/lib/api/wrappers",
+    "@/lib/audit",
+    "@/lib/auth/require-role",
+    "@/lib/auth/server",
+    "@/lib/channels/social/client",
+    "@/lib/channels/social/instagram-management",
+    "@/lib/channels/social/instagram-publishing",
+    "@/lib/impersonate/support",
+    "@/lib/instagram/publication-schema",
+    "@/lib/supabase/admin",
+    "node:crypto",
+    "sharp"
+  ],
+  "reference/nextjs/app/api/v1/instagram/account/route.ts": [
+    "@/lib/api/wrappers",
+    "@/lib/auth/require-role",
+    "@/lib/channels/social/client",
+    "@/lib/channels/social/store",
+    "@/lib/supabase/admin",
+    "node:crypto"
+  ],
+  "reference/nextjs/app/api/v1/instagram/[id]/route.ts": [
+    "@/lib/agent-engine/db/request-pool",
+    "@/lib/api/wrappers",
+    "@/lib/audit",
+    "@/lib/auth/require-role",
+    "@/lib/impersonate/support",
+    "@/lib/instagram/schema",
+    "@/lib/instagram/store",
+    "node:crypto",
+    "zod"
+  ],
+  "reference/nextjs/app/api/v1/growth/instagram/route.ts": [
+    "@/lib/ai/dispatcher/rate-limit",
+    "@/lib/api/wrappers",
+    "@/lib/audit",
+    "@/lib/auth/require-role",
+    "@/lib/auth/server",
+    "@/lib/channels/social/client",
+    "@/lib/channels/social/instagram-management",
+    "@/lib/impersonate/support",
+    "@/lib/instagram/automation-schema",
+    "@/lib/supabase/admin",
+    "node:crypto",
+    "zod"
+  ],
+  "reference/nextjs/app/app/instagram/_image-generation.tsx": [
+    "./_image-generation.module.css",
+    "@/hooks/i18n/useT",
+    "@/lib/instagram/schema",
+    "lucide-react"
+  ],
+  "reference/nextjs/app/app/instagram/_home.tsx": [
+    "./_shared",
+    "@/components/brand/ArtisanIcon",
+    "@/components/ui/button",
+    "@/hooks/i18n/useLocaleDeData",
+    "@/hooks/i18n/useT",
+    "@/lib/clipboard",
+    "@/lib/instagram/schema",
+    "@phosphor-icons/react",
+    "next/image",
+    "next/link",
+    "react"
+  ],
+  "reference/nextjs/app/app/instagram/_shared.tsx": [
+    "@/components/brand/ArtisanIcon",
+    "@/components/ui/avatar",
+    "@/components/ui/button",
+    "@/hooks/auth/AuthProvider",
+    "@/hooks/i18n/useLocaleDeData",
+    "@/hooks/i18n/useT",
+    "@/lib/instagram/schema",
+    "@tanstack/react-query",
+    "next/image",
+    "next/link",
+    "next/navigation"
+  ],
+  "reference/nextjs/app/app/instagram/_create.tsx": [
+    "./_image-generation",
+    "./_shared",
+    "@/components/ui/button",
+    "@/components/ui/textarea",
+    "@/hooks/i18n/useT",
+    "@/lib/instagram/brand",
+    "@/lib/instagram/carousel-templates",
+    "@/lib/instagram/schema",
+    "@/lib/random-id",
+    "next/image",
+    "next/navigation",
+    "react"
+  ],
+  "reference/nextjs/app/app/instagram/_library.tsx": [
+    "./_shared",
+    "@/components/ui/button",
+    "@/hooks/i18n/useT",
+    "next/link"
+  ],
+  "reference/nextjs/app/app/instagram/_review.tsx": [
+    "./_image-generation",
+    "./_publish",
+    "./_shared",
+    "@/components/ui/button",
+    "@/components/ui/textarea",
+    "@/hooks/i18n/useT",
+    "@/lib/clipboard",
+    "@/lib/instagram/carousel-templates",
+    "@/lib/instagram/schema",
+    "next/image",
+    "next/link",
+    "react"
+  ],
+  "reference/nextjs/app/app/instagram/layout.tsx": ["@/lib/auth/server"],
+  "reference/nextjs/app/app/instagram/_inspirations.tsx": [
+    "./_shared",
+    "@/components/ui/button",
+    "@/components/ui/input",
+    "@/components/ui/textarea",
+    "@/hooks/i18n/useLocaleDeData",
+    "@/hooks/i18n/useT",
+    "@/lib/instagram/schema",
+    "@/lib/random-id",
+    "next/link",
+    "react"
+  ],
+  "reference/nextjs/app/app/instagram/page.tsx": ["./_home"],
+  "reference/nextjs/app/app/instagram/_publish.tsx": [
+    "./_shared",
+    "@/components/ui/button",
+    "@/hooks/i18n/useT",
+    "@/lib/instagram/publication-schema",
+    "@/lib/instagram/schema",
+    "@/lib/random-id",
+    "next/image",
+    "next/link",
+    "react"
+  ],
+  "reference/nextjs/app/app/instagram/_insights.tsx": [
+    "./_shared",
+    "@/components/ui/button",
+    "@/hooks/i18n/useLocaleDeData",
+    "@/hooks/i18n/useT",
+    "react"
+  ],
+  "reference/nextjs/app/app/instagram/insights/page.tsx": ["../_insights"],
+  "reference/nextjs/app/app/instagram/library/page.tsx": ["../_library"],
+  "reference/nextjs/app/app/instagram/growth/page.tsx": [
+    "../_shared",
+    "@/app/app/growth/instagram/_client",
+    "@/lib/auth/server",
+    "next",
+    "next/navigation"
+  ],
+  "reference/nextjs/app/app/instagram/new/page.tsx": [
+    "../_create",
+    "@/lib/auth/server",
+    "@/lib/instagram/brand",
+    "next/navigation"
+  ],
+  "reference/nextjs/app/app/instagram/inspirations/page.tsx": [
+    "../_inspirations"
+  ],
+  "reference/nextjs/app/app/instagram/posts/[id]/page.tsx": ["../../_review"]
+}

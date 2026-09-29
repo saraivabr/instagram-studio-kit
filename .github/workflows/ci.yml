@@ -1,0 +1,30 @@
+name: Verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm pack --dry-run
+      - run: npm --prefix apps/studio ci --ignore-scripts
+      - run: npm run app:build
+      - name: Test standalone app
+        shell: bash
+        run: |
+          npm --prefix apps/studio run start > /tmp/studio.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4318/api/v1/instagram > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:app

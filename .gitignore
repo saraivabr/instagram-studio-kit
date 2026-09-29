@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.tgz
+.DS_Store
+.next/
+.studio-data/
+*.tsbuildinfo

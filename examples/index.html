@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-BR">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Instagram Studio Kit</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      background: #f6f5f2;
+      color: #242421;
+      max-width: 900px;
+      margin: 50px auto;
+      padding: 24px;
+    }
+    h1 {
+      font-size: 46px;
+      letter-spacing: -2px;
+      margin-bottom: 8px;
+    }
+    .notice {
+      padding: 16px;
+      background: #ebe5d6;
+      border-radius: 12px;
+    }
+    form {
+      display: grid;
+      gap: 16px;
+      margin: 30px 0;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+    }
+    input,
+    textarea,
+    select,
+    button {
+      font: inherit;
+      padding: 14px;
+      border: 1px solid #c9c8c3;
+      border-radius: 10px;
+    }
+    textarea {
+      min-height: 90px;
+    }
+    button {
+      background: #242421;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+    }
+    #result {
+      display: grid;
+      gap: 16px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      border: 1px solid #dedcd6;
+    }
+    .mock {
+      background: linear-gradient(145deg, #153e35, #35806a);
+      color: white;
+      padding: 32px;
+      min-height: 160px;
+      border-radius: 10px;
+      display: grid;
+      align-content: center;
+      font-size: 28px;
+    }
+    .meta {
+      font-size: 14px;
+      color: #666;
+    }
+    #status {
+      min-height: 24px;
+    }
+  </style>
+  <h1>Ideias que viram conteúdo.</h1>
+  <p>Um núcleo de Instagram para integrar à sua solução.</p>
+  <p class="notice">
+    Demonstração simulada: testa o fluxo e os contratos. A composição abaixo é
+    um placeholder; nenhuma arte de IA, publicação ou Direct real será enviado.
+  </p>
+  <form id="form">
+    <label
+      >O que sua empresa faz?<input
+        name="niche"
+        value="Consultoria de negócios"
+        required
+        minlength="2" /></label
+    ><label
+      >Qual é a ideia?<textarea name="brief" required minlength="10">
+Como organizar o atendimento para responder melhor aos clientes.</textarea></label
+    ><label
+      >Formato<select name="format">
+        <option value="feed">Post vertical</option>
+        <option value="square">Post quadrado</option>
+        <option value="story">Story</option>
+      </select></label
+    ><label
+      >Conteúdo<select name="template">
+        <option value="">Uma arte</option>
+        <option value="noticia_impacto_operacional">
+          Carrossel de 8 slides
+        </option>
+      </select></label
+    ><button>Criar demonstração</button>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+  <div id="result"></div>
+  <script type="module">
+    const form = document.querySelector("#form"),
+      status = document.querySelector("#status"),
+      result = document.querySelector("#result");
+    let fingerprint = "",
+      requests = [];
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button");
+      button.disabled = true;
+      result.replaceChildren();
+      const values = Object.fromEntries(new FormData(form));
+      const next = JSON.stringify(values);
+      if (next !== fingerprint) {
+        fingerprint = next;
+        const group = crypto.randomUUID();
+        requests = Array.from({ length: values.template ? 8 : 1 }, (_, i) => ({
+          id: crypto.randomUUID(),
+          kind: "post",
+          brief: values.brief,
+          niche: values.niche,
+          format: values.template ? "feed" : values.format,
+          ...(values.template
+            ? {
+                carousel: {
+                  id: group,
+                  template: values.template,
+                  slide: i + 1,
+                },
+              }
+            : {}),
+        }));
+      }
+      try {
+        for (const [index, input] of requests.entries()) {
+          status.textContent = `Preparando ${index + 1} de ${requests.length}…`;
+          const response = await fetch("/api/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(input),
+          });
+          const item = await response.json();
+          if (!response.ok) throw new Error(item.error);
+          const card = document.createElement("article");
+          card.className = "card";
+          const preview = document.createElement("div");
+          preview.className = "mock";
+          preview.textContent =
+            (requests.length > 1 ? `Slide ${index + 1} · ` : "") + values.brief;
+          const label = document.createElement("p");
+          label.className = "meta";
+          label.textContent = "Placeholder demonstrativo · " + item.status;
+          const caption = document.createElement("p");
+          caption.textContent = item.caption;
+          card.append(preview, label, caption);
+          result.append(card);
+        }
+        status.textContent =
+          "Demonstração concluída. UUIDs preservados ao repetir o mesmo pedido.";
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</html>
