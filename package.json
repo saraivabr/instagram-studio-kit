@@ -1,43 +1,30 @@
 {
-  "name": "@saraivabr/instagram-studio-kit",
-  "version": "0.1.0",
-  "description": "Núcleo portável de criação de artes, carrosséis e integração Instagram",
-  "type": "module",
+  "name": "instagram-studio-workspace",
+  "version": "0.1.1",
+  "private": true,
   "license": "MIT",
   "engines": {
     "node": ">=22"
   },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "docs",
-    "README.md",
-    "LICENSE",
-    "NOTICE"
+  "workspaces": [
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
-    "test": "npm run build && node --test tests/*.test.mjs",
-    "demo": "npm --prefix apps/studio run dev",
-    "prepare": "npm run build",
-    "prepack": "npm run build",
-    "demo:sdk": "npm run build && node examples/server.mjs",
-    "app:install": "npm run build && npm --prefix apps/studio ci",
-    "app:build": "npm --prefix apps/studio run build",
-    "test:app": "node --test tests/app-smoke.mjs"
-  },
-  "dependencies": {
-    "zod": "^4.6.5"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.3",
-    "@types/node": "^22.20.3"
+    "prepare": "npm run build:core",
+    "build:core": "npm run build --workspace @saraivabr/instagram-studio-kit",
+    "build": "npm run build:core && npm run app:build",
+    "typecheck": "npm run build:core && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:core && node --test tests/*.test.mjs",
+    "test:app": "node scripts/test-app.mjs",
+    "demo": "npm run dev --workspace instagram-studio-app",
+    "dev": "npm run build:core && npm run demo",
+    "start": "npm run start --workspace instagram-studio-app",
+    "app:build": "npm run build --workspace instagram-studio-app",
+    "app:install": "npm run build:core",
+    "demo:sdk": "npm run build:core && node examples/server.mjs",
+    "pack:core": "npm pack --workspace @saraivabr/instagram-studio-kit",
+    "verify": "npm test && npm run typecheck && npm run app:build && npm run test:app"
   },
   "repository": {
     "type": "git",

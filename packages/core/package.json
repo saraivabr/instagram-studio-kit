@@ -1,0 +1,55 @@
+{
+  "name": "@saraivabr/instagram-studio-kit",
+  "version": "0.1.1",
+  "description": "Núcleo portável de criação de artes, carrosséis e integração Instagram",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/domain/index.d.ts",
+      "import": "./dist/domain/index.js"
+    },
+    "./ai": {
+      "types": "./dist/providers/openai/index.d.ts",
+      "import": "./dist/providers/openai/index.js"
+    },
+    "./social": {
+      "types": "./dist/providers/zernio/index.d.ts",
+      "import": "./dist/providers/zernio/index.js"
+    },
+    "./studio": {
+      "types": "./dist/application/studio.d.ts",
+      "import": "./dist/application/studio.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "@types/node": "^22.20.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saraivabr/instagram-studio-kit.git"
+  }
+}

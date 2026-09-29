@@ -1,7 +1,7 @@
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { redirect } from "next/navigation";
 import { companyContext } from "@/lib/instagram/brand";
-import { CreatePost } from "../_create";
+import { CreatePost } from "@/features/instagram/components/create";
 export const metadata = { title: "Criar postagem" };
 export default async function Page({
   searchParams,

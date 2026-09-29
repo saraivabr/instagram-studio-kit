@@ -41,13 +41,13 @@ Para logs, primeiro liste `instagramAutomations(context)` e verifique que o ID p
 
 Sem credenciais, a geração cria artes rotuladas como simulação. Com `apps/studio/.env.local`, chave e dois modelos compatíveis, o backend usa `openAiTransport`; chamadas têm custo no provedor. Nunca coloque a chave em `NEXT_PUBLIC_*`. Pesquisa real requer credencial; no modo demo ela falha explicitamente. As telas sociais mostram conta desconectada e bloqueiam publicação/ativação, até você implementar os adapters e autorização.
 
-`app/api/[...path]/route.ts` atende o mesmo contrato de UI; `lib/local/backend.ts` conecta os casos de uso do SDK. Substitua a camada local por banco, storage e sessão do seu produto. `hooks/auth/AuthProvider.tsx` e `lib/auth/server.ts` precisam ser substituídos juntos. Scripts bindam em 127.0.0.1 e a API verifica Host/Origin; não publique esse exemplo sem substituir sua autenticação.
+`app/api/[...path]/route.ts` apenas declara os handlers do Next. `server/http/handler.ts` atende o contrato HTTP; `server/runtime.ts` conecta os casos de uso do SDK aos adapters em `server/adapters/`. Substitua a camada local por banco, storage e sessão do seu produto. `hooks/auth/AuthProvider.tsx` e `lib/auth/server.ts` precisam ser substituídos juntos. Scripts bindam em 127.0.0.1 e a API verifica Host/Origin; não publique esse exemplo sem substituir sua autenticação.
 
 A casca global do CRM, seu kanban e cobrança ficam fora do módulo. Os links de integração têm destinos locais explicativos. O layout interno de Instagram permanece o original.
 
 ## Referência da implementação anterior
 
-`reference/nextjs/` preserva criação, animação, biblioteca, revisão, inspirações, publicação, insights e growth como material de adaptação. Fora da compilação do SDK. O inventário completo de imports externos está em `reference-imports.json`.
+As telas executáveis ficam em `apps/studio/features/instagram/components/`; as rotas em `apps/studio/app/` apenas compõem páginas. Os contratos são importados de `packages/core`, sem cópias locais. `docs/legacy/api/` conserva os handlers do CRM anterior somente para comparação: não é código executável deste pacote.
 
 Substitua os seguintes contratos:
 
@@ -60,4 +60,4 @@ Substitua os seguintes contratos:
 | API wrappers/audit/logger        | Erros sanitizados e auditoria                        |
 | Social store/client              | Credenciais cifradas e perfil exclusivo por tenant   |
 
-As migrations originais não são distribuídas como instalador autônomo: dependem das tabelas e helpers do CRM. Implemente o schema conforme os contratos acima ou adapte a camada original ao seu banco. Não copie a árvore `reference/` esperando que imports `@/` resolvam automaticamente.
+As migrations originais não são distribuídas como instalador autônomo: dependem das tabelas e helpers do CRM. Implemente o schema conforme os contratos acima ou adapte a camada original ao seu banco. Não copie a árvore `docs/legacy/api/` esperando que imports do CRM resolvam automaticamente.

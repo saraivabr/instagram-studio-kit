@@ -10,7 +10,7 @@ import {
   publicationResult,
   requireInstagramAccount,
   openAiTransport,
-} from "../dist/index.js";
+} from "../packages/core/dist/index.js";
 import { memoryRepository } from "../examples/memory.mjs";
 const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jh+kAAAAASUVORK5CYII=";

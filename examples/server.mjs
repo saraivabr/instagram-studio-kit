@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { createAi, createStudio } from "../dist/index.js";
+import { createAi, createStudio } from "../packages/core/dist/index.js";
 import { memoryRepository } from "./memory.mjs";
 const png =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jh+kAAAAASUVORK5CYII=";

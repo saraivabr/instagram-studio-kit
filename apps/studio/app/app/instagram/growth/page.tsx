@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
-import { StudioShell } from "../_shared";
-import { InstagramGrowthClient } from "@/app/app/growth/instagram/_client";
+import { StudioShell } from "@/features/instagram/components/shared";
+import { InstagramGrowthClient } from "@/features/instagram/components/growth";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Automações do Instagram | escreve.ai" };
