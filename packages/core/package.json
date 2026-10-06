@@ -44,8 +44,8 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "@types/node": "^22.20.3"
+    "typescript": "^7.0.2",
+    "@types/node": "^26.6.4"
   },
   "repository": {
     "type": "git",
