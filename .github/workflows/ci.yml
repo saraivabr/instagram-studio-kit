@@ -18,7 +18,7 @@ jobs:
       - run: npm run pack:core
       - name: Upload browser screenshots and traces
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: studio-browser-checks
           path: test-results/
