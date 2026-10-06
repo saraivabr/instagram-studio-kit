@@ -83,8 +83,8 @@
   <h1>Ideias que viram conteúdo.</h1>
   <p>Um núcleo de Instagram para integrar à sua solução.</p>
   <p class="notice">
-    Demonstração simulada: testa o fluxo e os contratos. A composição abaixo é
-    um placeholder; nenhuma arte de IA, publicação ou Direct real será enviado.
+    Demonstração simulada: testa o fluxo e os contratos. A composição abaixo é um placeholder;
+    nenhuma arte de IA, publicação ou Direct real será enviado.
   </p>
   <form id="form">
     <label
@@ -105,9 +105,7 @@ Como organizar o atendimento para responder melhor aos clientes.</textarea></lab
     ><label
       >Conteúdo<select name="template">
         <option value="">Uma arte</option>
-        <option value="noticia_impacto_operacional">
-          Carrossel de 8 slides
-        </option>
+        <option value="noticia_impacto_operacional">Carrossel de 8 slides</option>
       </select></label
     ><button>Criar demonstração</button>
   </form>
@@ -160,8 +158,7 @@ Como organizar o atendimento para responder melhor aos clientes.</textarea></lab
           card.className = "card";
           const preview = document.createElement("div");
           preview.className = "mock";
-          preview.textContent =
-            (requests.length > 1 ? `Slide ${index + 1} · ` : "") + values.brief;
+          preview.textContent = (requests.length > 1 ? `Slide ${index + 1} · ` : "") + values.brief;
           const label = document.createElement("p");
           label.className = "meta";
           label.textContent = "Placeholder demonstrativo · " + item.status;
@@ -170,8 +167,7 @@ Como organizar o atendimento para responder melhor aos clientes.</textarea></lab
           card.append(preview, label, caption);
           result.append(card);
         }
-        status.textContent =
-          "Demonstração concluída. UUIDs preservados ao repetir o mesmo pedido.";
+        status.textContent = "Demonstração concluída. UUIDs preservados ao repetir o mesmo pedido.";
       } catch (error) {
         status.textContent = error.message;
       } finally {

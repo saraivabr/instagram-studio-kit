@@ -8,3 +8,6 @@ dist/
 .next/
 .studio-data/
 *.tsbuildinfo
+next-env.d.ts
+playwright-report/
+test-results/

@@ -107,7 +107,7 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
     setReply(r?.commentReply ?? "");
   }
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-7 p-5 sm:p-8">
+    <section className="mx-auto w-full max-w-5xl space-y-7 p-5 sm:p-8">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm text-muted-foreground">{t("Instagram")}</p>
@@ -140,8 +140,8 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
       {state && (
         <div className="grid grid-cols-3 gap-3">
           {[
-            ["Ativas", state.automations.filter((a) => a.isActive).length],
-            ["Directs enviados", state.automations.reduce((n, a) => n + a.stats.dmsSent, 0)],
+            [t("Ativas"), state.automations.filter((a) => a.isActive).length],
+            [t("Directs enviados"), state.automations.reduce((n, a) => n + a.stats.dmsSent, 0)],
             [t("Falhas"), state.automations.reduce((n, a) => n + a.stats.dmsFailed, 0)],
           ].map(([label, value]) => (
             <div key={label} className="rounded-2xl border p-4">
@@ -161,11 +161,13 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
           <article key={rule.id} className="space-y-3 rounded-2xl border p-5">
             <div className="flex flex-wrap justify-between gap-3">
               <h2 className="font-semibold">{rule.name}</h2>
-              <span className="text-sm">{rule.isActive ? "Ativa" : "Pausada"}</span>
+              <span className="text-sm">{rule.isActive ? t("Ativa") : t("Pausada")}</span>
             </div>
             <p className="text-sm text-muted-foreground">
               {rule.postTitle ||
-                (rule.platformPostId ? `Postagem ${rule.platformPostId}` : t("Todas as postagens"))}
+                (rule.platformPostId
+                  ? `${t("Postagem")} ${rule.platformPostId}`
+                  : t("Todas as postagens"))}
             </p>
             <p className="text-sm">
               {t("Palavras:")} {rule.keywords.join(", ") || t("Qualquer comentário")}
@@ -205,7 +207,7 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
                       })
                     }
                   >
-                    {rule.isActive ? "Pausar" : "Ativar"}
+                    {rule.isActive ? t("Pausar") : t("Ativar")}
                   </Button>
                 </>
               )}
@@ -230,10 +232,10 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
                 {new Date(log.createdAt).toLocaleString(idioma)} ·{" "}
                 {(
                   {
-                    sent: "Enviado",
+                    sent: t("Enviado"),
                     failed: t("Falhou"),
-                    pending: "Aguardando envio",
-                    skipped: "Ignorado",
+                    pending: t("Aguardando envio"),
+                    skipped: t("Ignorado"),
                     gated: t("Aguardando confirmação"),
                   } as Record<string, string>
                 )[log.status] ?? log.status}
@@ -386,9 +388,9 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
             <div className="flex gap-3">
               <Button disabled={busy} type="submit">
                 {busy
-                  ? "Salvando…"
+                  ? t("Salvando…")
                   : editing === "new"
-                    ? "Salvar e ativar"
+                    ? t("Salvar e ativar")
                     : t("Salvar alterações")}
               </Button>
               <Button
@@ -403,6 +405,6 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
           </form>
         </section>
       )}
-    </main>
+    </section>
   );
 }

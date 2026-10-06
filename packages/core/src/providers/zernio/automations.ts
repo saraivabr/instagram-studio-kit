@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { automationMutation } from "../../domain/automation-schema.js";
-import { socialRequest, SocialError } from "./client.js";
+import { parseSocialResponse, socialRequest, SocialError } from "./client.js";
 import {
   instagramContext,
   instagramAutomations,
@@ -14,10 +14,7 @@ export async function mutateAutomation(
 ) {
   const body = automationMutation.parse(input);
   const automations = await instagramAutomations(context);
-  const existing =
-    body.action !== "create"
-      ? automations.find((a) => a.id === body.id)
-      : undefined;
+  const existing = body.action !== "create" ? automations.find((a) => a.id === body.id) : undefined;
   if (body.action !== "create" && !existing)
     throw new SocialError("Automação não encontrada nesta organização.", 404);
   let result: unknown;
@@ -34,17 +31,12 @@ export async function mutateAutomation(
     requireInstagramAccount(context, rule.account_id);
     if (
       existing &&
-      (existing.accountId !== rule.account_id ||
-        (existing.platformPostId ?? "") !== rule.post_id)
+      (existing.accountId !== rule.account_id || (existing.platformPostId ?? "") !== rule.post_id)
     )
-      throw new SocialError(
-        "Crie outra regra para mudar a conta ou postagem.",
-        422,
-      );
+      throw new SocialError("Crie outra regra para mudar a conta ou postagem.", 422);
     const posts = await instagramPosts(context.key, rule.account_id);
     const post = posts.find((p) => p.id === rule.post_id);
-    if (!post && !existing)
-      throw new SocialError("Selecione uma postagem desta conta.", 422);
+    if (!post && !existing) throw new SocialError("Selecione uma postagem desta conta.", 422);
     const fields = {
       name: rule.name,
       keywords: rule.keywords,
@@ -55,10 +47,7 @@ export async function mutateAutomation(
     if (body.action === "create") {
       // Provider guarantees one active per-post rule. Reconcile uncertain creates before repeating.
       const samePost = automations.find(
-        (a) =>
-          a.accountId === rule.account_id &&
-          a.platformPostId === rule.post_id &&
-          a.isActive,
+        (a) => a.accountId === rule.account_id && a.platformPostId === rule.post_id && a.isActive,
       );
       if (samePost) {
         if (
@@ -87,16 +76,11 @@ export async function mutateAutomation(
         { requestId: body.id },
       );
     } else
-      result = await socialRequest(
-        context.key,
-        `comment-automations/${body.id}`,
-        fields,
-        {
-          method: "PATCH",
-        },
-      );
+      result = await socialRequest(context.key, `comment-automations/${body.id}`, fields, {
+        method: "PATCH",
+      });
   }
 
-  z.object({ success: z.literal(true) }).parse(result);
+  parseSocialResponse(z.object({ success: z.literal(true) }), result);
   return { saved: true };
 }

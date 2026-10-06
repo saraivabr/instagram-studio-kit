@@ -3,7 +3,14 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { StudioShell, Intro, Notice, Loading, Empty, studioApi } from "@/features/instagram/components/shared";
+import {
+  StudioShell,
+  Intro,
+  Notice,
+  Loading,
+  Empty,
+  studioApi,
+} from "@/features/instagram/components/shared";
 type Result = {
   connected: boolean;
   accounts: { id: string; name: string }[];
@@ -122,8 +129,7 @@ export function Insights() {
           {data.insights && (
             <>
               <p className="text-sm text-muted-foreground">
-                {t("Período:")}
-                {data.insights.dateRange.since} a {data.insights.dateRange.until}
+                {t("Período:")} {data.insights.dateRange.since} a {data.insights.dateRange.until}
               </p>
               <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
                 {metrics.map((m) => (

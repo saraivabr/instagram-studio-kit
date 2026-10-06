@@ -3,8 +3,7 @@
  * (self-host servindo http://IP): `navigator.clipboard` só existe em
  * isSecureContext — fora dele o fallback usa textarea + execCommand('copy').
  *
- * Regra do repo (teste-régua): componente client NUNCA chama
- * navigator.clipboard direto — sempre este helper.
+ * Componentes usam este helper para compartilhar o mesmo fallback.
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
   if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
@@ -23,7 +22,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   textarea.style.opacity = "0";
   document.body.appendChild(textarea);
   textarea.select();
-  let ok = false;
+  let ok: boolean;
   try {
     ok = document.execCommand("copy");
   } catch {

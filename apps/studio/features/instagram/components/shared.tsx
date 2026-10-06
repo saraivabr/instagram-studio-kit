@@ -3,7 +3,13 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import Image from "next/image";
 import { ArtisanIcon } from "@/components/brand/ArtisanIcon";
@@ -20,24 +26,206 @@ export async function studioApi<T>(path = "", init?: RequestInit): Promise<T> {
   if (!r.ok) throw new Error(json?.error?.message || "Não foi possível concluir. Tente novamente.");
   return json.data;
 }
-export function useItems() {
+type ItemPage = {
+  items: StudioItem[];
+  can_create: boolean;
+  meta: { cursor: string | null; has_more: boolean; total: number };
+};
+type ItemFilters = {
+  kind?: StudioItem["kind"];
+  status?: StudioItem["status"];
+  carousel_id?: string;
+  limit?: number;
+};
+export function useItems(filters: ItemFilters = {}) {
   const { activeOrg } = useAuth();
-  const query = useQuery({
-    queryKey: ["instagram-studio", activeOrg?.orgId],
-    queryFn: ({ signal }) =>
-      studioApi<{ items: StudioItem[]; can_create: boolean }>("", { signal }),
-    refetchInterval: (q) =>
-      q.state.data?.items.some((i) => i.status === "generating") ? 5000 : false,
+  const client = useQueryClient();
+  const filterKey = JSON.stringify(filters);
+  const queryKey = ["instagram-studio", activeOrg?.orgId, filterKey];
+  const query = useInfiniteQuery({
+    queryKey,
+    initialPageParam: null as string | null,
+    queryFn: ({ signal, pageParam }) => {
+      const params = new URLSearchParams({ limit: "24", ...JSON.parse(filterKey) });
+      if (pageParam) params.set("cursor", pageParam);
+      return studioApi<ItemPage>(`?${params}`, { signal });
+    },
+    getNextPageParam: (page) => (page.meta.has_more ? page.meta.cursor : undefined),
   });
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const pendingIds = items
+    .filter((item) => item.status === "generating")
+    .map((item) => item.id)
+    .join(",");
+  const [pollError, setPollError] = useState("");
+  useEffect(() => {
+    if (!pendingIds) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      const results = await Promise.allSettled(
+        pendingIds
+          .split(",")
+          .map((id) => studioApi<StudioItem>(`/${id}`, { signal: controller.signal })),
+      );
+      if (controller.signal.aborted) return;
+      const updates = new Map(
+        results.flatMap((result) =>
+          result.status === "fulfilled" ? [[result.value.id, result.value] as const] : [],
+        ),
+      );
+      const failed = results.find((result) => result.status === "rejected");
+      setPollError(
+        failed?.status === "rejected"
+          ? failed.reason instanceof Error
+            ? failed.reason.message
+            : "Não foi possível atualizar as criações."
+          : "",
+      );
+      client.setQueryData<InfiniteData<ItemPage>>(
+        ["instagram-studio", activeOrg?.orgId, filterKey],
+        (data) => {
+          if (!data) return data;
+          const status = (JSON.parse(filterKey) as ItemFilters).status;
+          const removed = status
+            ? data.pages
+                .flatMap((page) => page.items)
+                .filter((item) => {
+                  const updated = updates.get(item.id);
+                  return updated && updated.status !== status;
+                }).length
+            : 0;
+          return {
+            ...data,
+            pages: data.pages.map((page) => ({
+              ...page,
+              meta: { ...page.meta, total: Math.max(0, page.meta.total - removed) },
+              items: page.items
+                .map((item) => updates.get(item.id) ?? item)
+                .filter((item) => !status || item.status === status),
+            })),
+          };
+        },
+      );
+      timer = setTimeout(() => void poll(), 5000);
+    }
+    timer = setTimeout(() => void poll(), 5000);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [pendingIds, activeOrg?.orgId, filterKey, client]);
   return {
-    items: query.data?.items ?? [],
+    items,
     loading: query.isPending,
-    error: query.error?.message ?? "",
-    canCreate: query.data?.can_create ?? false,
+    error: query.error?.message ?? (pendingIds ? pollError : ""),
+    canCreate: query.data?.pages[0]?.can_create ?? false,
+    total: query.data?.pages[0]?.meta.total ?? 0,
+    hasMore: query.hasNextPage,
+    loadingMore: query.isFetchingNextPage,
+    loadMore: () => query.fetchNextPage(),
     reload: async () => {
       await query.refetch();
     },
   };
+}
+export type StudioConfiguration = {
+  mode: "demo" | "configured" | "incomplete";
+  message: string;
+  can_research: boolean;
+};
+export function useStudioConfiguration() {
+  const { activeOrg } = useAuth();
+  return useQuery({
+    queryKey: ["instagram-config", activeOrg?.orgId],
+    queryFn: ({ signal }) => studioApi<StudioConfiguration>("/config", { signal }),
+    staleTime: 30_000,
+  });
+}
+export function ConfigurationBanner() {
+  const config = useStudioConfiguration();
+  return (
+    <div
+      role="status"
+      className="border-b border-border bg-accent-soft px-6 py-2 text-center text-xs"
+    >
+      {config.data?.message ??
+        (config.isError
+          ? "Não foi possível consultar a configuração. Atualize a página para tentar novamente."
+          : "Consultando configuração do estúdio…")}
+    </div>
+  );
+}
+export function thumbnailUrl(item: StudioItem) {
+  return item.image_url?.startsWith("/api/assets/")
+    ? `${item.image_url.split("?")[0]}?thumbnail=1`
+    : item.image_url;
+}
+export function ItemActions({
+  item,
+  onRetry,
+  onArchive,
+}: {
+  item: StudioItem;
+  onRetry: (item: StudioItem) => void | Promise<void>;
+  onArchive: () => void | Promise<void>;
+}) {
+  const t = useT();
+  const [confirmRetry, setConfirmRetry] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function run(retry: boolean) {
+    setBusy(true);
+    setError("");
+    try {
+      if (retry)
+        await onRetry(await studioApi<StudioItem>(`/${item.id}/retry`, { method: "POST" }));
+      else {
+        await studioApi(`/${item.id}`, { method: "DELETE" });
+        await onArchive();
+      }
+      setConfirmRetry(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("Não foi possível concluir."));
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (item.status === "generating" || (!item.can_archive && !item.can_retry)) return null;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3">
+        {item.can_retry && item.status === "failed" && item.kind !== "reference" && (
+          <Button variant="outline" disabled={busy} onClick={() => setConfirmRetry(true)}>
+            {t("Tentar novamente")}
+          </Button>
+        )}
+        {item.can_archive && (
+          <Button variant="ghost" disabled={busy} onClick={() => void run(false)}>
+            {t("Arquivar pedido")}
+          </Button>
+        )}
+      </div>
+      {confirmRetry && (
+        <Notice>
+          <p>
+            {t(
+              "Esta ação cria um novo pedido. Com IA configurada, haverá uma nova chamada ao provedor e ela pode ter custo.",
+            )}
+          </p>
+          <div className="mt-3 flex gap-3">
+            <Button disabled={busy} onClick={() => void run(true)}>
+              {t("Confirmar nova tentativa")}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirmRetry(false)}>
+              {t("Cancelar")}
+            </Button>
+          </div>
+        </Notice>
+      )}
+      {error && <Notice error>{error}</Notice>}
+    </div>
+  );
 }
 const sections = [
   { href: "/app/instagram", label: "Visão Geral" },
@@ -205,9 +393,9 @@ export function Gallery({ items }: { items: StudioItem[] }) {
             {item.image_url ? (
               <Image
                 unoptimized
-                width={1024}
-                height={1280}
-                src={item.image_url}
+                width={320}
+                height={400}
+                src={thumbnailUrl(item)!}
                 alt={item.input.kind === "post" ? item.input.brief : "Criação"}
                 className="h-full w-full object-contain"
               />

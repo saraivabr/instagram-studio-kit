@@ -1,0 +1,14 @@
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+dist/
+**/dist/
+.studio-data/
+**/.studio-data/
+**/next-env.d.ts
+docs/legacy/
+package-lock.json
+playwright-report/
+test-results/
+*.tgz

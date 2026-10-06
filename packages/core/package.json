@@ -1,11 +1,11 @@
 {
   "name": "@saraivabr/instagram-studio-kit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Núcleo portável de criação de artes, carrosséis e integração Instagram",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "exports": {
     ".": {
@@ -38,7 +38,6 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "prepare": "npm run build",
     "prepack": "npm run build"
   },
   "dependencies": {

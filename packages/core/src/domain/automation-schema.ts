@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { studioId } from "./schema.js";
 const providerId = z.string().regex(/^[a-f0-9]{24}$/);
 export const automationInput = z
   .object({
@@ -18,11 +19,8 @@ export const automationMutation = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("create"),
-      id: z.uuid(),
-      rule: automationInput.refine(
-        (rule) => rule.post_id.length > 0,
-        "Selecione uma postagem.",
-      ),
+      id: studioId,
+      rule: automationInput.refine((rule) => rule.post_id.length > 0, "Selecione uma postagem."),
     })
     .strict(),
   z

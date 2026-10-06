@@ -8,11 +8,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { referenceSchema, type StudioItem } from "@saraivabr/instagram-studio-kit/schemas";
-import { StudioShell, Intro, Notice, Loading, useItems, studioApi } from "@/features/instagram/components/shared";
+import {
+  StudioShell,
+  Intro,
+  Notice,
+  Loading,
+  useItems,
+  studioApi,
+  useStudioConfiguration,
+  ItemActions,
+} from "@/features/instagram/components/shared";
 export function Inspirations() {
   const t = useT();
   const locale = useTagDeIdioma();
-  const { items, loading, error: loadError, reload, canCreate } = useItems();
+  const referenceQuery = useItems({ kind: "reference" });
+  const researchQuery = useItems({ kind: "research" });
+  const config = useStudioConfiguration();
+  const loading = referenceQuery.loading || researchQuery.loading;
+  const loadError = referenceQuery.error || researchQuery.error;
+  const canCreate = referenceQuery.canCreate;
+  const canResearch = canCreate && config.data?.can_research === true;
+  const reload = async () => {
+    await Promise.all([referenceQuery.reload(), researchQuery.reload()]);
+  };
   const [username, setUsername] = useState("");
   const [niche, setNiche] = useState("");
   const [brief, setBrief] = useState("");
@@ -20,8 +38,8 @@ export function Inspirations() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<StudioItem | null>(null);
   const pendingSearch = useRef<{ fingerprint: string; id: string } | null>(null);
-  const refs = items.filter((i) => i.kind === "reference");
-  const researches = items.filter((i) => i.kind === "research");
+  const refs = referenceQuery.items;
+  const researches = researchQuery.items;
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const p = referenceSchema.safeParse(username);
@@ -74,10 +92,11 @@ export function Inspirations() {
         body: JSON.stringify({ ...request, id: pendingSearch.current.id }),
       });
       setResult(value);
-      await reload();
+      if (value.status === "failed") pendingSearch.current = null;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível pesquisar.");
     } finally {
+      await reload();
       setBusy(false);
     }
   }
@@ -117,7 +136,7 @@ export function Inspirations() {
             placeholder={t("Ex.: estética, imobiliária, confeitaria…")}
             value={niche}
             onChange={(e) => setNiche(e.target.value)}
-            disabled={busy || !canCreate}
+            disabled={busy || !canResearch}
           />
           <label htmlFor="research-brief" className="block font-medium">
             {t("Sobre o que você quer encontrar ideias?")}
@@ -131,11 +150,27 @@ export function Inspirations() {
             placeholder={t("Ex.: ideias recentes para mostrar bastidores e atrair encomendas")}
             value={brief}
             onChange={(e) => setBrief(e.target.value)}
-            disabled={busy || !canCreate}
+            disabled={busy || !canResearch}
           />
-          <Button type="submit" disabled={busy || !canCreate}>
+          <Button type="submit" disabled={busy || !canResearch}>
             {busy ? t("Preparando…") : t("Buscar inspirações")}
           </Button>
+          {config.data && !config.data.can_research && (
+            <Notice>
+              {t(
+                config.data.mode === "demo"
+                  ? "A pesquisa de fontes exige IA configurada. No modo demonstração, você pode guardar perfis de referência; a busca fica indisponível."
+                  : "Complete a configuração de IA no servidor para pesquisar fontes públicas.",
+              )}
+            </Notice>
+          )}
+          {config.isError && (
+            <Notice error>
+              {t(
+                "Não foi possível verificar se a pesquisa está disponível. Atualize a página para tentar novamente.",
+              )}
+            </Notice>
+          )}
           <p className="text-sm text-muted-foreground">
             {t(
               "As sugestões mostram as fontes. Popularidade só é afirmada quando houver evidência.",
@@ -206,16 +241,34 @@ export function Inspirations() {
         </Notice>
       )}
       {selected?.status === "failed" && <Notice error>{selected.error}</Notice>}
+      {selected?.status === "generating" && (
+        <Notice>
+          {t(
+            "Sua pesquisa está em andamento. Você pode sair desta página e abrir o resultado quando estiver pronto.",
+          )}
+        </Notice>
+      )}
+      {selected && canCreate && (
+        <ItemActions
+          item={selected}
+          onRetry={async (item) => {
+            setResult(item);
+            await researchQuery.reload();
+          }}
+          onArchive={async () => {
+            setResult(null);
+            await researchQuery.reload();
+          }}
+        />
+      )}
       {selected?.status === "ready" && selected.input.kind === "research" && (
         <section className="space-y-6 border-t border-border pt-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h2 className="font-serif text-3xl">
-              {t("Ideias para")}
-              {selected.input.niche}
+              {t("Ideias para")} {selected.input.niche}
             </h2>
             <span className="text-sm text-muted-foreground">
-              {t("Pesquisado em")}
-              {new Date(selected.created_at).toLocaleString(locale)}
+              {t("Pesquisado em")} {new Date(selected.created_at).toLocaleString(locale)}
             </span>
           </div>
           <div className="space-y-4 leading-relaxed">
@@ -258,22 +311,29 @@ export function Inspirations() {
         <section className="space-y-3">
           <h2 className="font-serif text-2xl">{t("Pesquisas anteriores")}</h2>
           {researches.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setResult(r)}
-              className="block w-full rounded-xl border border-border p-4 text-left"
-            >
-              {r.input.kind === "research" ? r.input.brief : t("Pesquisa")}{" "}
-              <span className="text-sm text-muted-foreground">
-                ·{" "}
-                {r.status === "ready"
-                  ? t("Abrir")
-                  : r.status === "failed"
-                    ? r.error
-                    : t("Em andamento")}
-              </span>
-            </button>
+            <div key={r.id} className="rounded-xl border border-border p-4">
+              <button key={r.id} onClick={() => setResult(r)} className="block w-full text-left">
+                {r.input.kind === "research" ? r.input.brief : t("Pesquisa")}{" "}
+                <span className="text-sm text-muted-foreground">
+                  ·{" "}
+                  {r.status === "ready"
+                    ? t("Abrir")
+                    : r.status === "failed"
+                      ? r.error
+                      : t("Em andamento")}
+                </span>
+              </button>
+            </div>
           ))}
+          {researchQuery.hasMore && (
+            <Button
+              variant="outline"
+              disabled={researchQuery.loadingMore}
+              onClick={() => void researchQuery.loadMore()}
+            >
+              {t(researchQuery.loadingMore ? "Carregando…" : "Carregar mais pesquisas")}
+            </Button>
+          )}
         </section>
       )}
     </StudioShell>

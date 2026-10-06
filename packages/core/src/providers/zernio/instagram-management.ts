@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { listSocialAccounts, socialRequest, SocialError } from "./client.js";
+import {
+  listSocialAccounts,
+  parseSocialResponse,
+  socialRequest,
+  SocialError,
+  validateSocialId,
+} from "./client.js";
 
 export const socialId = z.string().regex(/^[a-f0-9]{24}$/);
 export const publishedPostSchema = z.object({
@@ -44,56 +50,44 @@ export type InstagramAutomation = z.infer<typeof automationSchema>;
 export type InstagramPost = z.infer<typeof publishedPostSchema>;
 export type InstagramAutomationLog = z.infer<typeof automationLogSchema>;
 
-export async function instagramContext(config: {
-  key: string;
-  profileId: string;
-}) {
-  if (!config)
-    throw new SocialError(
-      "Conecte seu Instagram em Conexões para continuar.",
-      422,
-    );
-  const accounts = (
-    await listSocialAccounts(config.key, config.profileId)
-  ).filter((a) => a.platform === "instagram");
+export async function instagramContext(config: { key: string; profileId: string }) {
+  if (!config) throw new SocialError("Conecte seu Instagram em Conexões para continuar.", 422);
+  const accounts = (await listSocialAccounts(config.key, config.profileId)).filter(
+    (a) => a.platform === "instagram",
+  );
   return { ...config, accounts };
 }
 export function requireInstagramAccount(
   context: Awaited<ReturnType<typeof instagramContext>>,
   id: string,
 ) {
+  validateSocialId(id);
   const account = context.accounts.find((a) => a._id === id);
-  if (!account)
-    throw new SocialError("Conta não encontrada nesta organização.", 404);
+  if (!account) throw new SocialError("Conta não encontrada nesta organização.", 404);
   if (!account.isActive)
-    throw new SocialError(
-      "Reconecte esta conta do Instagram para continuar.",
-      422,
-    );
+    throw new SocialError("Reconecte esta conta do Instagram para continuar.", 422);
   return account;
 }
 export async function instagramPosts(key: string, accountId: string) {
-  return z
-    .object({ posts: z.array(publishedPostSchema) })
-    .parse(await socialRequest(key, `accounts/${accountId}/posts`)).posts;
+  const account = validateSocialId(accountId);
+  return parseSocialResponse(
+    z.object({ posts: z.array(publishedPostSchema) }),
+    await socialRequest(key, `accounts/${encodeURIComponent(account)}/posts`),
+  ).posts;
 }
-export async function instagramAutomations(
-  context: Awaited<ReturnType<typeof instagramContext>>,
-) {
-  const result = z
-    .object({
+export async function instagramAutomations(context: Awaited<ReturnType<typeof instagramContext>>) {
+  validateSocialId(context.profileId);
+  const result = parseSocialResponse(
+    z.object({
       automations: z.array(z.object({ platform: z.string() }).passthrough()),
-    })
-    .parse(
-      await socialRequest(
-        context.key,
-        `comment-automations?profileId=${encodeURIComponent(context.profileId)}`,
-      ),
-    );
+    }),
+    await socialRequest(
+      context.key,
+      `comment-automations?profileId=${encodeURIComponent(context.profileId)}`,
+    ),
+  );
   return result.automations
     .filter((a) => a.platform === "instagram")
-    .map((a) => automationSchema.parse(a))
-    .filter((a) =>
-      context.accounts.some((account) => account._id === a.accountId),
-    );
+    .map((a) => parseSocialResponse(automationSchema, a))
+    .filter((a) => context.accounts.some((account) => account._id === a.accountId));
 }

@@ -1,10 +1,10 @@
 {
   "name": "instagram-studio-workspace",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "workspaces": [
     "packages/*",
@@ -24,10 +24,24 @@
     "app:install": "npm run build:core",
     "demo:sdk": "npm run build:core && node examples/server.mjs",
     "pack:core": "npm pack --workspace @saraivabr/instagram-studio-kit",
-    "verify": "npm test && npm run typecheck && npm run app:build && npm run test:app"
+    "verify": "npm run lint && npm run format:check && npm test && npm run typecheck && npm run app:build && npm run test:app",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/saraivabr/instagram-studio-kit.git"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
+    "@eslint/js": "^10.0.1",
+    "typescript-eslint": "^8.57.2",
+    "eslint-plugin-react-hooks": "^7.1.1"
+  },
+  "overrides": {
+    "source-map-js": "^1.2.2"
   }
 }

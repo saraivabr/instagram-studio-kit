@@ -2,11 +2,26 @@
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { StudioShell, Intro, Gallery, Empty, Loading, Notice, useItems } from "@/features/instagram/components/shared";
+import {
+  StudioShell,
+  Intro,
+  Gallery,
+  Empty,
+  Loading,
+  Notice,
+  useItems,
+} from "@/features/instagram/components/shared";
 export function Library() {
   const t = useT();
-  const { items, loading, error, reload } = useItems();
-  const posts = items.filter((i) => i.kind === "post");
+  const {
+    items: posts,
+    loading,
+    error,
+    reload,
+    hasMore,
+    loadMore,
+    loadingMore,
+  } = useItems({ kind: "post" });
   return (
     <StudioShell>
       <div className="flex flex-wrap items-end justify-between gap-5">
@@ -36,6 +51,11 @@ export function Library() {
         >
           {t("As imagens que você criar ficam aqui, junto com seus pedidos e legendas.")}
         </Empty>
+      )}
+      {hasMore && (
+        <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>
+          {t(loadingMore ? "Carregando…" : "Carregar mais criações")}
+        </Button>
       )}
     </StudioShell>
   );

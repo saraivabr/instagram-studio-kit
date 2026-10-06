@@ -6,8 +6,7 @@
  * `crypto.getRandomValues` existe em QUALQUER contexto; o fallback monta o
  * UUID v4 a partir dele (RFC 4122: version nibble 4, variant 10).
  *
- * Código client-side NUNCA chama `crypto.randomUUID()` cru — sempre este
- * helper (teste-régua em lib/random-id.test.ts).
+ * Componentes podem usar este helper em contextos seguros e não seguros.
  */
 export function randomId(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();

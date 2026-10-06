@@ -1,6 +1,7 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/clipboard";
 import Image from "next/image";
 import { useEffect, useState } from "react";
@@ -8,11 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { StudioItem } from "@saraivabr/instagram-studio-kit/schemas";
 import { carouselTemplates } from "@saraivabr/instagram-studio-kit/schemas";
-import { StudioShell, Intro, Loading, Notice, studioApi } from "@/features/instagram/components/shared";
+import {
+  StudioShell,
+  Intro,
+  Loading,
+  Notice,
+  studioApi,
+  thumbnailUrl,
+  ItemActions,
+} from "@/features/instagram/components/shared";
 import { PublishPost } from "@/features/instagram/components/publish";
 import { ImageGeneration } from "@/features/instagram/components/image-generation";
 export function Review({ id }: { id: string }) {
   const t = useT();
+  const router = useRouter();
   const [item, setItem] = useState<StudioItem | null>(null);
   const [carouselItems, setCarouselItems] = useState<StudioItem[]>([]);
   const [carouselLoading, setCarouselLoading] = useState(false);
@@ -21,51 +31,76 @@ export function Review({ id }: { id: string }) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let current: StudioItem | null = null;
+    let slides: StudioItem[] = [];
+    let loadedCarousel: string | null = null;
+    setItem(null);
+    setCarouselItems([]);
+    setError("");
     const read = async () => {
       try {
-        const value = await studioApi<StudioItem>(`/${id}`);
+        const value: StudioItem =
+          !current || current.status === "generating"
+            ? await studioApi<StudioItem>(`/${id}`, { signal: controller.signal })
+            : current;
         if (!active) return;
         setItem(value);
-        setCaption(value.caption);
+        if (!current || current.status === "generating") setCaption(value.caption);
+        current = value;
         if (value.input.kind === "post" && value.input.carousel) {
           const carouselId = value.input.carousel.id;
-          setCarouselLoading(true);
-          try {
-            const listing = await studioApi<{ items: StudioItem[] }>(`?carousel_id=${carouselId}`);
-            if (active)
-              setCarouselItems(
-                listing.items
-                  .filter(
-                    (entry) =>
-                      entry.input.kind === "post" && entry.input.carousel?.id === carouselId,
-                  )
-                  .sort((a, b) =>
-                    a.input.kind === "post" && b.input.kind === "post"
-                      ? (a.input.carousel?.slide ?? 0) - (b.input.carousel?.slide ?? 0)
-                      : 0,
-                  ),
-              );
-          } catch (e) {
-            if (active)
-              setError(e instanceof Error ? e.message : "Não foi possível carregar o carrossel.");
-          } finally {
-            if (active) setCarouselLoading(false);
+          if (loadedCarousel !== carouselId) {
+            setCarouselLoading(true);
+            const listing = await studioApi<{ items: StudioItem[] }>(
+              `?carousel_id=${carouselId}&limit=8`,
+              { signal: controller.signal },
+            );
+            slides = listing.items.sort((a, b) =>
+              a.input.kind === "post" && b.input.kind === "post"
+                ? (a.input.carousel?.slide ?? 0) - (b.input.carousel?.slide ?? 0)
+                : 0,
+            );
+            loadedCarousel = carouselId;
+          } else {
+            slides = await Promise.all(
+              slides.map((slide) =>
+                slide.id === id
+                  ? value
+                  : slide.status === "generating"
+                    ? studioApi<StudioItem>(`/${slide.id}`, { signal: controller.signal })
+                    : slide,
+              ),
+            );
           }
+          if (!active) return;
+          setCarouselItems(slides);
+          setCarouselLoading(false);
         }
-        if (value.status === "generating") timer = setTimeout(() => void read(), 5000);
+        setError("");
       } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : "Não foi possível abrir.");
+        if (active) {
+          setError(e instanceof Error ? e.message : "Não foi possível abrir.");
+          setCarouselLoading(false);
+        }
       }
+      if (
+        active &&
+        (current?.status === "generating" || slides.some((slide) => slide.status === "generating"))
+      )
+        timer = setTimeout(() => void read(), 5000);
     };
     void read();
     return () => {
       active = false;
+      controller.abort();
       clearTimeout(timer);
     };
-  }, [id]);
+  }, [id, revision]);
   async function save() {
     setBusy(true);
     setError("");
@@ -111,7 +146,14 @@ export function Review({ id }: { id: string }) {
       <Intro eyebrow={t("Revisar postagem")} title={t("Agora, deixe com a sua cara.")}>
         {t("Confira a imagem, ajuste a legenda e leve sua ideia para o Instagram.")}
       </Intro>
-      {error && <Notice error>{error}</Notice>}
+      {error && (
+        <Notice error>
+          {error}{" "}
+          <button className="underline" onClick={() => setRevision((value) => value + 1)}>
+            {t("Atualizar pedido")}
+          </button>
+        </Notice>
+      )}
       {!item && !error ? (
         <Loading />
       ) : item && item.input.kind === "post" ? (
@@ -120,6 +162,7 @@ export function Review({ id }: { id: string }) {
             {item.image_url ? (
               <Image
                 unoptimized
+                priority
                 width={1024}
                 height={1280}
                 src={item.image_url}
@@ -162,7 +205,7 @@ export function Review({ id }: { id: string }) {
                           {entry.image_url && (
                             <Image
                               unoptimized
-                              src={entry.image_url}
+                              src={thumbnailUrl(entry)!}
                               alt={`${entry.input.carousel?.slide}º slide`}
                               width={160}
                               height={200}
@@ -261,6 +304,11 @@ export function Review({ id }: { id: string }) {
               )}
             {saved && <Notice>{t("Legenda salva com sucesso.")}</Notice>}
             {copied && <Notice>{t("Legenda copiada.")}</Notice>}
+            <ItemActions
+              item={item}
+              onRetry={(newItem) => router.push(`/app/instagram/posts/${newItem.id}`)}
+              onArchive={() => router.push("/app/instagram/library")}
+            />
             <Link
               className="block text-sm underline"
               href={`/app/instagram/new?brief=${encodeURIComponent(item.input.brief)}&niche=${encodeURIComponent(item.input.niche)}`}

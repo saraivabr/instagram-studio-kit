@@ -6,22 +6,17 @@ export const formats = {
   square: { label: "Post quadrado", size: "1024x1024", ratio: "1 / 1" },
   story: { label: "Story", size: "1152x2048", ratio: "9 / 16" },
 } as const;
+/** Canonical identifiers are also used in asset paths and idempotency claims. */
+export const studioId = z.uuid().transform((id) => id.toLowerCase());
 export const referenceSchema = z
   .string()
   .trim()
   .transform((v) => v.replace(/^@/, ""))
-  .pipe(
-    z
-      .string()
-      .regex(
-        /^[a-zA-Z0-9._]{1,30}$/,
-        "Informe o @ do perfil, sem links ou espaços.",
-      ),
-  );
+  .pipe(z.string().regex(/^[a-zA-Z0-9._]{1,30}$/, "Informe o @ do perfil, sem links ou espaços."));
 export const createSchema = z.discriminatedUnion("kind", [
   z
     .object({
-      id: z.uuid(),
+      id: studioId,
       kind: z.literal("post"),
       brief: z.string().trim().min(10).max(3000),
       niche: z.string().trim().min(2).max(2000),
@@ -30,10 +25,8 @@ export const createSchema = z.discriminatedUnion("kind", [
       caption: z.string().max(2200).default(""),
       carousel: z
         .object({
-          id: z.uuid(),
-          template: z.enum(
-            Object.keys(carouselTemplates) as [keyof typeof carouselTemplates],
-          ),
+          id: studioId,
+          template: z.enum(Object.keys(carouselTemplates) as [keyof typeof carouselTemplates]),
           slide: z.number().int().min(1).max(8),
         })
         .strict()
@@ -42,7 +35,7 @@ export const createSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
-      id: z.uuid(),
+      id: studioId,
       kind: z.literal("research"),
       niche: z.string().trim().min(2).max(150),
       brief: z.string().trim().min(3).max(1000),
@@ -51,7 +44,7 @@ export const createSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
-      id: z.uuid(),
+      id: studioId,
       kind: z.literal("reference"),
       username: referenceSchema,
     })
@@ -70,6 +63,8 @@ export interface StudioItem {
   asset_path: string | null;
   image_url?: string | null;
   can_edit?: boolean;
+  can_archive?: boolean;
+  can_retry?: boolean;
   error: string | null;
   created_at: string;
   updated_at: string;

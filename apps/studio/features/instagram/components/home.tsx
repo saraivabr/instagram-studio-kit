@@ -22,45 +22,50 @@ import {
 } from "@phosphor-icons/react";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { ArtisanIcon } from "@/components/brand/ArtisanIcon";
-import { StudioShell, Loading, Notice, useItems } from "@/features/instagram/components/shared";
+import {
+  StudioShell,
+  Loading,
+  Notice,
+  useItems,
+  thumbnailUrl,
+} from "@/features/instagram/components/shared";
 import type { StudioItem } from "@saraivabr/instagram-studio-kit/schemas";
-
-interface GrowthTrigger {
-  id: string;
-  name: string;
-  post_id: string | null;
-  keywords: string[];
-  match_mode: string;
-  dm_response_template: string;
-  auto_create_lead: boolean;
-  executions_count: number;
-  leads_generated_count: number;
-  is_active: boolean;
-}
+import type { InstagramAutomation } from "@saraivabr/instagram-studio-kit/social";
 
 export function InstagramHome() {
   const t = useT();
   const locale = useTagDeIdioma();
-  const { items, loading, error, canCreate, reload } = useItems();
-  const [triggers, setTriggers] = useState<GrowthTrigger[]>([]);
+  const { activeOrg } = useAuth();
+  const orgId = activeOrg?.orgId;
+  const [postFilter, setPostFilter] = useState<"all" | "ready" | "generating">("all");
+  const { items, loading, error, canCreate, reload, hasMore, loadMore, loadingMore, total } =
+    useItems({ kind: "post", limit: 6, ...(postFilter === "all" ? {} : { status: postFilter }) });
+  const [triggers, setTriggers] = useState<InstagramAutomation[]>([]);
   const [loadingGrowth, setLoadingGrowth] = useState(true);
   const [growthError, setGrowthError] = useState(false);
-  const [postFilter, setPostFilter] = useState<"all" | "ready" | "generating">("all");
+  const [growthOrg, setGrowthOrg] = useState<string | undefined>();
+  const growthLoading = loadingGrowth || growthOrg !== orgId;
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedCaptionId, setExpandedCaptionId] = useState<string | null>(null);
 
   // Carregar dados de Automações & Growth
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    setTriggers([]);
+    setGrowthError(false);
+    setLoadingGrowth(true);
+    setGrowthOrg(orgId);
     async function loadGrowth() {
       try {
-        const res = await fetch("/api/v1/growth/instagram");
+        const res = await fetch("/api/v1/growth/instagram", { signal: controller.signal });
         if (!res.ok) throw new Error("growth unavailable");
         const data = await res.json();
-        if (!Array.isArray(data.triggers)) throw new Error("growth response invalid");
-        if (active) setTriggers(data.triggers);
+        if (!Array.isArray(data.data?.automations)) throw new Error("growth response invalid");
+        if (active) setTriggers(data.data.automations);
       } catch {
         if (active) setGrowthError(true);
       } finally {
@@ -70,8 +75,9 @@ export function InstagramHome() {
     loadGrowth();
     return () => {
       active = false;
+      controller.abort();
     };
-  }, []);
+  }, [orgId]);
 
   const posts = items.filter((i) => i.kind === "post");
   const filteredPosts = posts.filter((p) => {
@@ -80,9 +86,9 @@ export function InstagramHome() {
     return true;
   });
 
-  const totalDms = triggers.reduce((acc, tr) => acc + (tr.executions_count || 0), 0);
-  const totalLeads = triggers.reduce((acc, tr) => acc + (tr.leads_generated_count || 0), 0);
-  const activeTriggersCount = triggers.filter((tr) => tr.is_active).length;
+  const totalDms = triggers.reduce((acc, tr) => acc + tr.stats.dmsSent, 0);
+  const totalFailedDms = triggers.reduce((acc, tr) => acc + tr.stats.dmsFailed, 0);
+  const activeTriggersCount = triggers.filter((tr) => tr.isActive).length;
 
   const handleCopyCaption = async (id: string, caption: string) => {
     if (!caption) return;
@@ -172,7 +178,7 @@ export function InstagramHome() {
               <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 px-3 py-2 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
                 <span className="flex items-center gap-1.5">
                   <CheckCircle size={14} weight="fill" />
-                  {t("Possível lead no funil")}
+                  {t("Exemplo de conversa iniciada")}
                 </span>
               </div>
             </div>
@@ -184,11 +190,15 @@ export function InstagramHome() {
       <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 shadow-xs sm:p-5">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium sm:text-sm">{t("Criações no Estúdio")}</span>
+            <span className="text-xs font-medium sm:text-sm">
+              {t(postFilter === "all" ? "Criações no Estúdio" : "Criações neste filtro")}
+            </span>
             <Sparkle size={18} className="text-purple-500" />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
-            <span className="text-2xl font-bold tracking-tight sm:text-3xl">{posts.length}</span>
+            <span className="text-2xl font-bold tracking-tight sm:text-3xl">
+              {loading || error ? "—" : total}
+            </span>
             <Link
               href="/app/instagram/library"
               className="text-xs text-muted-foreground hover:underline"
@@ -205,7 +215,7 @@ export function InstagramHome() {
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-bold tracking-tight sm:text-3xl">
-              {loadingGrowth || growthError ? "—" : activeTriggersCount}
+              {growthLoading || growthError ? "—" : activeTriggersCount}
             </span>
             <Link
               href="/app/instagram/growth"
@@ -223,7 +233,7 @@ export function InstagramHome() {
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-bold tracking-tight sm:text-3xl">
-              {loadingGrowth || growthError ? "—" : totalDms}
+              {growthLoading || growthError ? "—" : totalDms}
             </span>
             <span className="text-xs text-muted-foreground">{t("automáticas")}</span>
           </div>
@@ -231,15 +241,18 @@ export function InstagramHome() {
 
         <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 shadow-xs sm:p-5">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium sm:text-sm">{t("Leads Gerados")}</span>
+            <span className="text-xs font-medium sm:text-sm">{t("Falhas no Direct")}</span>
             <Users size={18} className="text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-bold tracking-tight text-emerald-600 sm:text-3xl dark:text-emerald-400">
-              {loadingGrowth || growthError ? "—" : totalLeads}
+              {growthLoading || growthError ? "—" : totalFailedDms}
             </span>
-            <Link href="/app/kanban" className="text-xs text-muted-foreground hover:underline">
-              {t("Ver no CRM")}
+            <Link
+              href="/app/instagram/growth"
+              className="text-xs text-muted-foreground hover:underline"
+            >
+              {t("Ver resultados")}
             </Link>
           </div>
         </div>
@@ -310,7 +323,7 @@ export function InstagramHome() {
           </Notice>
         ) : filteredPosts.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredPosts.slice(0, 6).map((item) => {
+            {filteredPosts.map((item) => {
               const brief = item.input.kind === "post" ? item.input.brief : "Criação";
               const isReady = item.status === "ready";
               const isGenerating = item.status === "generating";
@@ -354,9 +367,9 @@ export function InstagramHome() {
                     {item.image_url ? (
                       <Image
                         unoptimized
-                        width={1024}
-                        height={1280}
-                        src={item.image_url}
+                        width={320}
+                        height={400}
+                        src={thumbnailUrl(item)!}
                         alt={brief}
                         className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       />
@@ -463,6 +476,13 @@ export function InstagramHome() {
               );
             })}
           </div>
+        ) : postFilter !== "all" ? (
+          <Notice>
+            {t("Nenhuma criação neste filtro.")}{" "}
+            <button className="underline" onClick={() => setPostFilter("all")}>
+              {t("Ver todas as criações")}
+            </button>
+          </Notice>
         ) : (
           /* Empty State Inspirador com Ideias Prontas */
           <div className="space-y-6 rounded-3xl border border-dashed border-border bg-card/60 p-8 text-center sm:p-12">
@@ -500,16 +520,16 @@ export function InstagramHome() {
               </p>
               <div className="grid grid-cols-1 gap-4 text-left sm:grid-cols-3">
                 <Link
-                  href="/app/instagram/new?brief=Post%20chamativo%20anunciando%20uma%20condição%20especial%20exclusiva%20para%20seguidores%20com%20chamada%20para%20comentar%20EU%20QUERO"
+                  href={`/app/instagram/new?brief=${encodeURIComponent("Apresente um produto ou serviço real da empresa. Use apenas informações fornecidas; não invente preços, descontos ou condições especiais.")}`}
                   className="rounded-2xl border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-muted/30"
                 >
                   <span className="text-xl">🚀</span>
                   <h4 className="mt-2 text-sm font-semibold text-foreground">
-                    {t("Oferta ou Lançamento")}
+                    {t("Produto ou Serviço")}
                   </h4>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t(
-                      "Condição especial para seguidores com chamada para comentar 'EU QUERO' e receber DM.",
+                      "Mostre o que sua empresa oferece com informações reais, sem inventar preços ou descontos.",
                     )}
                   </p>
                 </Link>
@@ -530,15 +550,17 @@ export function InstagramHome() {
                 </Link>
 
                 <Link
-                  href="/app/instagram/new?brief=Depoimento%20e%20resultado%20real%20de%20um%20cliente%20satisfeito%20gerando%20confiança%20e%20prova%20social"
+                  href={`/app/instagram/new?brief=${encodeURIComponent("Mostre uma etapa real do trabalho da empresa e explique como ela ajuda o cliente. Não invente depoimentos ou resultados.")}`}
                   className="rounded-2xl border border-border bg-card p-4 transition hover:border-primary/40 hover:bg-muted/30"
                 >
                   <span className="text-xl">🤝</span>
                   <h4 className="mt-2 text-sm font-semibold text-foreground">
-                    {t("Prova Social")}
+                    {t("Bastidores do Trabalho")}
                   </h4>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {t("Destaque um resultado real de cliente que comprou e amou a experiência.")}
+                    {t(
+                      "Conte uma etapa real do seu trabalho e o cuidado que ela entrega ao cliente.",
+                    )}
                   </p>
                 </Link>
               </div>
@@ -547,6 +569,11 @@ export function InstagramHome() {
         )}
       </section>
 
+      {hasMore && (
+        <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>
+          {t(loadingMore ? "Carregando…" : "Carregar mais criações")}
+        </Button>
+      )}
       {/* Seção Integrada de Automações & Growth */}
       <section className="space-y-6 rounded-3xl border border-border bg-card p-6 shadow-xs sm:p-8">
         <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -571,7 +598,7 @@ export function InstagramHome() {
           </Button>
         </div>
 
-        {loadingGrowth ? (
+        {growthLoading ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
             {t("Carregando automações de Instagram…")}
           </div>
@@ -608,7 +635,7 @@ export function InstagramHome() {
                   <div className="flex items-center justify-between">
                     <span className="line-clamp-1 text-sm font-semibold">{trigger.name}</span>
                     <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-foreground">
-                      {trigger.is_active ? t("Ativo") : t("Pausado")}
+                      {trigger.isActive ? t("Ativo") : t("Pausado")}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -619,13 +646,13 @@ export function InstagramHome() {
                     </span>
                   </div>
                   <p className="line-clamp-2 text-xs text-muted-foreground italic">
-                    "{trigger.dm_response_template}"
+                    "{trigger.dmMessage}"
                   </p>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2 text-xs">
                   <span className="font-medium text-foreground">
-                    {trigger.executions_count} {t("DMs ·")} {trigger.leads_generated_count}{" "}
-                    {t("Leads")}
+                    {trigger.stats.dmsSent} {t("Directs enviados ·")} {trigger.stats.dmsFailed}{" "}
+                    {t("falhas")}
                   </span>
                   <Link
                     href="/app/instagram/growth"

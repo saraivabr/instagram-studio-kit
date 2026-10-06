@@ -4,8 +4,7 @@ export function memoryRepository() {
   return {
     async claim(tenant, input) {
       const key = JSON.stringify([tenant, input.id]);
-      if (records.has(key))
-        return { created: false, item: structuredClone(records.get(key)) };
+      if (records.has(key)) return { created: false, item: structuredClone(records.get(key)) };
       const now = new Date().toISOString();
       const item = {
         id: input.id,
@@ -25,8 +24,7 @@ export function memoryRepository() {
     },
     async complete(tenant, id, changes) {
       const key = JSON.stringify([tenant, id]);
-      if (!records.has(key))
-        throw new Error("Item não encontrado nesta organização.");
+      if (!records.has(key)) throw new Error("Item não encontrado nesta organização.");
       const item = {
         ...records.get(key),
         ...changes,

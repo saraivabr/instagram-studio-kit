@@ -1,1 +1,3 @@
-export function useTagDeIdioma() { return 'pt-BR'; }
+export function useTagDeIdioma() {
+  return "pt-BR";
+}

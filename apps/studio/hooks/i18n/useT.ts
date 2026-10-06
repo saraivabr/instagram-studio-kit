@@ -1,1 +1,3 @@
-export function useT() { return (text: string) => text; }
+export function useT() {
+  return (text: string) => text;
+}

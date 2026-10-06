@@ -1,13 +1,16 @@
 import { z } from "zod";
-import { listSocialAccounts, socialRequest, SocialError } from "./client.js";
+import {
+  listSocialAccounts,
+  parseSocialResponse,
+  socialRequest,
+  SocialError,
+  validateSocialId,
+} from "./client.js";
 const insightsSchema = z.object({
   success: z.literal(true),
   accountId: z.string(),
   dateRange: z.object({ since: z.string(), until: z.string() }),
-  metrics: z.record(
-    z.string(),
-    z.object({ total: z.number().finite().nonnegative() }),
-  ),
+  metrics: z.record(z.string(), z.object({ total: z.number().finite().nonnegative() })),
   unavailableMetrics: z.array(z.unknown()).optional(),
 });
 export async function instagramInsights(
@@ -15,6 +18,7 @@ export async function instagramInsights(
   accountId?: string,
 ) {
   if (!config) return { connected: false as const, accounts: [] };
+  if (accountId) validateSocialId(accountId);
   const accounts = (await listSocialAccounts(config.key, config.profileId))
     .filter((a) => a.platform === "instagram" && a.isActive)
     .map((a) => ({
@@ -34,16 +38,12 @@ export async function instagramInsights(
     metricType: "total_value",
     metrics: "reach,views,accounts_engaged,total_interactions",
   });
-  const result = insightsSchema.parse(
-    await socialRequest(
-      config.key,
-      `analytics/instagram/account-insights?${query}`,
-    ),
+  const result = parseSocialResponse(
+    insightsSchema,
+    await socialRequest(config.key, `analytics/instagram/account-insights?${query}`),
   );
   if (result.accountId !== accountId)
-    throw new SocialError(
-      "A resposta de resultados não corresponde à conta selecionada.",
-    );
+    throw new SocialError("A resposta de resultados não corresponde à conta selecionada.");
   return {
     connected: true as const,
     accounts,

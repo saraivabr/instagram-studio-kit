@@ -8,7 +8,10 @@ import Image from "next/image";
 import type { CompanyContext } from "@/lib/instagram/brand";
 import { Textarea } from "@/components/ui/textarea";
 import { formats, type StudioItem } from "@saraivabr/instagram-studio-kit/schemas";
-import { carouselTemplates, type CarouselTemplateId } from "@saraivabr/instagram-studio-kit/schemas";
+import {
+  carouselTemplates,
+  type CarouselTemplateId,
+} from "@saraivabr/instagram-studio-kit/schemas";
 import { StudioShell, Intro, Notice, studioApi } from "@/features/instagram/components/shared";
 import { ImageGeneration } from "@/features/instagram/components/image-generation";
 export function CreatePost({
@@ -35,7 +38,6 @@ export function CreatePost({
   const [niche, setNiche] = useState(initialNiche);
   const [format, setFormat] = useState<keyof typeof formats>("feed");
   const [carouselTemplate, setCarouselTemplate] = useState<CarouselTemplateId | "">("");
-  const [progress, setProgress] = useState(0);
   const [useLogo, setUseLogo] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -52,29 +54,39 @@ export function CreatePost({
       };
     const request = pendingRequest.current;
     try {
-      setProgress(0);
-      let firstId = request.ids[0];
-      for (let index = 0; index < request.ids.length; index++) {
-        const item = await studioApi<StudioItem>("", {
-          method: "POST",
-          body: JSON.stringify({
-            id: request.ids[index],
-            kind: "post",
-            brief,
-            niche,
-            format: carouselTemplate ? "feed" : format,
-            use_logo: useLogo,
-            caption: "",
-            ...(carouselTemplate
-              ? { carousel: { id: request.group, template: carouselTemplate, slide: index + 1 } }
-              : {}),
-          }),
-        });
-        if (item.status !== "ready")
-          throw new Error("A criação precisa ser conferida na biblioteca antes de continuar.");
-        if (index === 0) firstId = item.id;
-        setProgress(index + 1);
-      }
+      const item = carouselTemplate
+        ? (
+            await studioApi<{ items: StudioItem[] }>("/carousels", {
+              method: "POST",
+              body: JSON.stringify({
+                id: request.group,
+                item_ids: request.ids,
+                template: carouselTemplate,
+                brief,
+                niche,
+                use_logo: useLogo,
+                format: "feed",
+              }),
+            })
+          ).items[0]
+        : await studioApi<StudioItem>("", {
+            method: "POST",
+            body: JSON.stringify({
+              id: request.ids[0],
+              kind: "post",
+              brief,
+              niche,
+              format,
+              use_logo: useLogo,
+              caption: "",
+            }),
+          });
+      if (!item)
+        throw new Error(
+          "O pedido não foi confirmado. Confira a biblioteca antes de enviar novamente.",
+        );
+      if (item.status === "failed") pendingRequest.current = null;
+      const firstId = item.id;
       router.push(`/app/instagram/posts/${firstId}`);
     } catch (e) {
       setError(
@@ -253,7 +265,7 @@ export function CreatePost({
           <Button size="lg" disabled={busy} type="submit">
             {busy
               ? carouselTemplate
-                ? `${t("Criando carrossel")}: ${progress}/8`
+                ? t("Enviando carrossel…")
                 : t("Criando sua postagem…")
               : carouselTemplate
                 ? t("Gerar carrossel de 8 slides")
@@ -261,11 +273,11 @@ export function CreatePost({
           </Button>
           <p className="text-sm text-muted-foreground">
             {t(
-              "Texto e imagem usam o saldo compartilhado de IA da empresa. O consumo varia conforme a criação.",
+              "No modo demonstração, as artes são simuladas. Com IA configurada, texto e imagem geram chamadas cobradas pelo provedor.",
             )}{" "}
             {carouselTemplate &&
               t(
-                "Este modelo gera oito imagens, uma operação de IA por slide. Mantenha esta página aberta até concluir.",
+                "O carrossel gera oito imagens. Depois de enviar, você pode acompanhar os slides na revisão ou na biblioteca.",
               )}{" "}
             {canViewBilling && (
               <a href="/app/settings/billing" className="underline">

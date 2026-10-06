@@ -124,13 +124,19 @@ test("storage failure preserves failed state", async () => {
 test("invalid input and logo do not call provider", async () => {
   const h = harness();
   await assert.rejects(h.studio.create("a", { ...input(), brief: "x" }));
+  const logoInput = input();
   await assert.rejects(
-    h.studio.create("a", input(), undefined, {
+    h.studio.create("a", logoInput, undefined, {
       bytes: new Uint8Array([1, 2]),
       type: "image/png",
     }),
   );
   assert.equal(h.calls.length, 0);
+  assert.equal(
+    (await h.repository.claim("a", logoInput)).created,
+    true,
+    "Invalid logos cannot reserve a UUID permanently",
+  );
 });
 test("carousel only generates a caption on slide one", async () => {
   const h = harness();
@@ -144,9 +150,7 @@ test("carousel only generates a caption on slide one", async () => {
   assert.equal(h.calls.length, 9);
   assert.equal(h.saved.length, 8);
   assert.match(h.calls.at(-1)[1].prompt, /Slide 8\/8/);
-  assert.throws(() =>
-    carouselSlideBrief("x", "noticia_impacto_operacional", 9),
-  );
+  assert.throws(() => carouselSlideBrief("x", "noticia_impacto_operacional", 9));
 });
 test("reference stays local and research requires sources", async () => {
   const h = harness();
@@ -179,10 +183,7 @@ test("publication schema rejects duplicate assets and invalid quantity", () => {
     }).success,
     false,
   );
-  assert.equal(
-    createSchema.safeParse({ ...input(), tenantId: "untrusted" }).success,
-    false,
-  );
+  assert.equal(createSchema.safeParse({ ...input(), tenantId: "untrusted" }).success, false);
 });
 test("only the target receipt confirms publication", () => {
   const value = {
@@ -196,9 +197,7 @@ test("only the target receipt confirms publication", () => {
   assert.throws(() => publicationResult(value, "b"));
 });
 test("foreign and inactive accounts rejected", () => {
-  assert.throws(() =>
-    requireInstagramAccount({ key: "test", profileId: "p", accounts: [] }, "a"),
-  );
+  assert.throws(() => requireInstagramAccount({ key: "test", profileId: "p", accounts: [] }, "a"));
   assert.throws(() =>
     requireInstagramAccount(
       {

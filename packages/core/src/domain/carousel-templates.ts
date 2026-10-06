@@ -1,8 +1,7 @@
 export const carouselTemplates = {
   noticia_impacto_operacional: {
     label: "Da notícia ao impacto no negócio",
-    description:
-      "Uma novidade de IA, seus usos reais e o que muda na operação da empresa.",
+    description: "Uma novidade de IA, seus usos reais e o que muda na operação da empresa.",
     source: "https://www.instagram.com/p/DduXwDIiUvG/",
     slides: [
       {
@@ -51,11 +50,7 @@ export const carouselTemplates = {
 
 export type CarouselTemplateId = keyof typeof carouselTemplates;
 
-export function carouselSlideBrief(
-  idea: string,
-  template: CarouselTemplateId,
-  slide: number,
-) {
+export function carouselSlideBrief(idea: string, template: CarouselTemplateId, slide: number) {
   const selected = carouselTemplates[template];
   const step = selected.slides[slide - 1];
   if (!step) throw new Error("Slide inválido.");
