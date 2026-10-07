@@ -18,6 +18,7 @@ import { mockAiRequest } from "./adapters/demo/ai";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { companyContext } from "@/lib/instagram/brand";
 import { HttpError } from "./errors";
+import { logFailure, createWorkerBackoff } from "./diagnostics.mjs";
 export { image } from "./adapters/local/assets";
 export { repository };
 function settings() {
@@ -148,16 +149,22 @@ export async function retryItem(context: RequestContext, id: string) {
 const state = globalThis as typeof globalThis & {
   studioWorker?: ReturnType<typeof setInterval>;
   studioWorking?: boolean;
+  studioWorkerBackoff?: ReturnType<typeof createWorkerBackoff>;
 };
 async function runWorker() {
-  if (state.studioWorking) return;
+  const backoff = (state.studioWorkerBackoff ??= createWorkerBackoff());
+  if (state.studioWorking || !backoff.ready()) return;
   state.studioWorking = true;
   try {
     const job = claimJob();
-    if (!job) return;
+    if (!job) {
+      backoff.success();
+      return;
+    }
     const item = await repository.get(job.tenant, job.item_id);
     if (!item || item.status !== "generating") {
       finishJob(job.id, false);
+      backoff.success();
       return;
     }
     try {
@@ -171,13 +178,8 @@ async function runWorker() {
       const known =
         error instanceof StudioError || error instanceof SocialError || error instanceof HttpError;
       const message = known ? error.message : "Pedido interrompido.";
-      await repository.complete(job.tenant, item.id, {
-        status: "failed",
-        error: `${message} Confira o histórico do provedor antes de tentar novamente; uma nova geração pode ser cobrada.`,
-      });
-      finishJob(job.id, false);
-      console.error(
-        JSON.stringify({
+      logFailure(
+        {
           event: "studio_job_failed",
           job_id: job.id,
           item_id: item.id,
@@ -186,13 +188,28 @@ async function runWorker() {
           ...(error instanceof StudioError && error.upstreamStatus
             ? { upstream_status: error.upstreamStatus }
             : {}),
-        }),
+        },
+        error,
       );
+      await repository.complete(job.tenant, item.id, {
+        status: "failed",
+        error: `${message} Confira o histórico do provedor antes de tentar novamente; uma nova geração pode ser cobrada.`,
+      });
+      finishJob(job.id, false);
     }
-  } catch {
-    console.error(
-      JSON.stringify({ event: "studio_worker_failed", code: "storage_or_worker_error" }),
-    );
+    backoff.success();
+  } catch (error) {
+    const retry = backoff.failure(error);
+    if (retry.shouldLog)
+      logFailure(
+        {
+          event: "studio_worker_failed",
+          code: "storage_or_worker_error",
+          retry_in_ms: retry.retry_in_ms,
+          attempt: retry.attempt,
+        },
+        error,
+      );
   } finally {
     state.studioWorking = false;
   }

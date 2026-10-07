@@ -32,3 +32,13 @@ Referência: Auditoria Instagram Studio Kit, de 06/10/2026, sobre o commit `4e64
 A autenticação padrão continua sendo um adapter de demonstração restrito a loopback. Hospedagem exige substituí-lo pela sessão e pelas permissões do produto. SQLite e o worker integrado atendem uma instalação local persistente; um produto com várias instâncias deve fornecer banco, fila e storage compartilhados conforme os contratos.
 
 Os testes não consomem créditos nem publicam conteúdo. Modelos efetivamente habilitados na conta, OAuth, disponibilidade do provedor e entrega real de publicação/Direct precisam de validação na integração do produto. O orçamento em dólares reserva uma estimativa fornecida pelo operador, sem representar a cobrança real do provedor.
+
+## Complemento A-02 · 07/10/2026
+
+A reauditoria de `04f0c68` confirmou 23 achados e identificou a causa dos erros 500 e a repetição do worker como pendências. Os logs agora incluem `error.name`, `error.message`, `error.stack` e a cadeia `error.cause`, associados ao request ID ou job. O cliente continua recebendo apenas a mensagem pública e seu ID.
+
+Erros de JSON armazenado identificam o arquivo/registro e, quando disponível, a posição inválida, sem ecoar conteúdo privado. Headers, credenciais configuradas e padrões de tokens são sanitizados; objetos anexados ao erro não são serializados.
+
+O worker aplica esperas de 5, 10, 20, 40 e até 60 segundos após falhas de infraestrutura. Falhas iguais são registradas no máximo uma vez por minuto; uma causa diferente produz novo diagnóstico. Quando o armazenamento volta a funcionar, o worker retoma e reinicia seu controle de espera. Isso não reenvia um job pago de resultado incerto.
+
+A verificação inclui testes de sanitização e controle de repetição, além de um servidor Next real com JSON corrompido em pasta temporária: correlação do 500, diagnóstico da migração, janela de 30 segundos, preservação do arquivo e retomada depois de repará-lo sem reiniciar o processo.

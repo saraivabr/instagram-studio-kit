@@ -86,6 +86,8 @@ try {
     ]);
   }
   if (!process.exitCode) process.exitCode = await runTests(["--test", "tests/app-recovery.mjs"]);
+  if (!process.exitCode)
+    process.exitCode = await runTests(["--test", "tests/app-observability.mjs"]);
 } catch (error) {
   console.error(error.message);
   console.error(logs);

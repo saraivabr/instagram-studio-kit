@@ -1,5 +1,12 @@
 # Mudanças
 
+## Correção complementar A-02 · 07/10/2026
+
+- Logs de erros 500 e falhas de jobs/worker incluem nome, mensagem, stack e causas sanitizadas no servidor; resposta pública permanece genérica.
+- Falhas de migração/JSON identificam a origem sem registrar conteúdo privado.
+- Worker espera progressivamente após falhas de infraestrutura e deduplica o mesmo erro; recuperação retoma a fila no mesmo processo.
+- Testes de privacidade, repetição e corrupção real de storage incorporados ao CI.
+
 ## 0.2.0
 
 Correções da auditoria, com preservação da estrutura visual do módulo original.

@@ -22,6 +22,7 @@ import {
   startWorker,
 } from "@/server/runtime";
 import { HttpError } from "../errors";
+import { logFailure } from "../diagnostics.mjs";
 const listSchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).default(24),
@@ -226,9 +227,9 @@ export async function handleStudioRequest(req: NextRequest) {
       : known
         ? error.message
         : "Não foi possível concluir. Consulte o servidor com o ID desta requisição.";
-    console.error(
-      JSON.stringify({ event: "studio_request_failed", request_id: requestId, status, code }),
-    );
+    const details = { event: "studio_request_failed", request_id: requestId, status, code };
+    if (status >= 500) logFailure(details, error);
+    else console.error(JSON.stringify(details));
     return NextResponse.json(
       {
         error: {

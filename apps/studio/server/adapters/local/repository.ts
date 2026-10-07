@@ -12,6 +12,7 @@ import {
 } from "@saraivabr/instagram-studio-kit";
 import { dataDirectory } from "./paths";
 import { HttpError } from "../../errors";
+import { errorDiagnostic } from "../../diagnostics.mjs";
 type Row = { value: string };
 export type JobContext = { name: string; accent?: string | null; logoPath?: string | null };
 export type Job = { id: string; tenant: string; item_id: string; context: JobContext };
@@ -25,6 +26,24 @@ function transaction<T>(db: DatabaseSync, run: () => T): T {
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
+  }
+}
+/** Native JSON.parse errors can echo private bytes; preserve only format and position. */
+function storedJson<T>(value: string, label: string): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch (error) {
+    const position =
+      error instanceof SyntaxError ? /position (\d+)/.exec(error.message)?.[1] : undefined;
+    if (error instanceof SyntaxError) {
+      // Framework fallback logs must also be safe if the error escapes an API/worker handler.
+      const safe = errorDiagnostic(error);
+      error.message = safe.message;
+      error.stack = safe.stack;
+    }
+    throw new SyntaxError(`JSON inválido em ${label}.${position ? ` Posição ${position}.` : ""}`, {
+      cause: error,
+    });
   }
 }
 function database() {
@@ -41,6 +60,7 @@ function database() {
     CREATE TABLE IF NOT EXISTS brands(tenant TEXT PRIMARY KEY,description TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   `);
+  let phase = "inicialização do SQLite";
   try {
     if (
       !(db.prepare("PRAGMA table_info(jobs)").all() as { name: string }[]).some(
@@ -49,15 +69,16 @@ function database() {
     )
       db.exec("ALTER TABLE jobs ADD COLUMN cost REAL NOT NULL DEFAULT 0");
     if (!db.prepare("SELECT value FROM metadata WHERE key='json_migrated'").get()) {
+      phase = "migração de items.json";
       const path = join(dataDirectory, "items.json");
       // Validate the entire legacy file before changing the database. Never discard corrupt data.
       const legacy = existsSync(path)
-        ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, StudioItem>)
+        ? storedJson<Record<string, StudioItem>>(readFileSync(path, "utf8"), "items.json")
         : {};
       if (!legacy || Array.isArray(legacy) || typeof legacy !== "object")
         throw new Error("Invalid legacy store");
       const entries = Object.entries(legacy).map(([key, item]) => {
-        const pair: unknown = JSON.parse(key);
+        const pair = storedJson<unknown>(key, "chave de items.json");
         if (
           !Array.isArray(pair) ||
           pair.length !== 2 ||
@@ -103,7 +124,7 @@ function database() {
   } catch (error) {
     db.close();
     throw new Error(
-      "Não foi possível abrir o armazenamento local. Preserve os arquivos para recuperação.",
+      `Não foi possível abrir o armazenamento local (${phase}). Preserve os arquivos para recuperação.`,
       { cause: error },
     );
   }
@@ -127,7 +148,7 @@ function lookup(db: DatabaseSync, tenant: string, id: string, includeArchived = 
       `SELECT value FROM items WHERE tenant=? AND id=?${includeArchived ? "" : " AND archived=0"}`,
     )
     .get(tenant, id.toLowerCase()) as Row | undefined;
-  return row ? (JSON.parse(row.value) as StudioItem) : undefined;
+  return row ? storedJson<StudioItem>(row.value, "registro SQLite de item") : undefined;
 }
 function newItem(input: StudioInput): StudioItem {
   const now = new Date().toISOString();
@@ -219,7 +240,9 @@ export const repository: StudioReadRepository = {
       )
       .all(...values, limit + 1) as Row[];
     const has_more = rows.length > limit;
-    const items = rows.slice(0, limit).map((row) => JSON.parse(row.value) as StudioItem);
+    const items = rows
+      .slice(0, limit)
+      .map((row) => storedJson<StudioItem>(row.value, "registro SQLite de item"));
     const last = items.at(-1);
     return {
       items,
@@ -386,7 +409,7 @@ export function claimJob(): Job | undefined {
       new Date().toISOString(),
       row.id,
     );
-    return { ...row, context: JSON.parse(row.context) as JobContext };
+    return { ...row, context: storedJson<JobContext>(row.context, "contexto SQLite de job") };
   });
 }
 export function finishJob(id: string, success: boolean) {

@@ -106,3 +106,9 @@ O adapter local atende uma instalação em disco persistente. Para produção di
 ## Referência anterior
 
 As telas executáveis ficam em `apps/studio/features/instagram/components/`; contratos vêm de `packages/core`. `docs/legacy/api/` conserva handlers do CRM apenas para comparação. Migrations originais e serviços de billing, CRM e OAuth não são instaladores deste pacote: implemente os contratos no seu produto.
+
+## Diagnóstico no servidor
+
+Respostas de erro incluem `error.request_id` e `X-Request-ID`; procure esse ID no evento JSON `studio_request_failed`. Para erros 500, o log contém `error.name`, `message`, `stack` e `cause` recursiva sanitizada. Não devolva esses detalhes ao navegador nem anexe body, headers ou respostas brutas de provedores aos logs.
+
+`studio_job_failed` identifica job/item e preserva a causa antes de atualizar o estado. `studio_worker_failed` descreve problemas de infraestrutura e informa `retry_in_ms` e `attempt`. Tentativas usam esperas crescentes até 60 segundos; o mesmo erro é registrado no máximo uma vez por minuto. Depois de corrigir o armazenamento, o worker retoma sem reiniciar. Um diagnóstico de JSON aponta o arquivo ou registro inválido, sem copiar seu conteúdo. Preserve e recupere os dados antes de retomar; o mecanismo não repete automaticamente chamadas pagas com resultado incerto.
