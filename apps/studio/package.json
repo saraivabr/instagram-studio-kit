@@ -25,8 +25,8 @@
     "@saraivabr/instagram-studio-kit": "file:../../packages/core"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
-    "@types/node": "^22.20.3",
+    "typescript": "^7.0.2",
+    "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
