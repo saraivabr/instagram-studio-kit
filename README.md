@@ -109,7 +109,7 @@ Use **`packages/core/`**. O SDK independe de Next.js e do CRM.
 ```bash
 npm run pack:core
 # No projeto que vai receber o módulo:
-npm install /caminho/saraivabr-instagram-studio-kit-0.2.0.tgz
+npm install /caminho/saraivabr-instagram-studio-kit-0.2.1.tgz
 ```
 
 O pacote **não está publicado no npm**. Distribua o tarball ou mantenha a dependência local; não substitua por um nome de registro sem verificar o publicador.

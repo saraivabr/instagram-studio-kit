@@ -28,7 +28,7 @@ export const localAssets: AssetStore = {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const [width, height] = formats[options?.format ?? "square"].size.split("x").map(Number);
     const rendered = await sharp(bytes, { limitInputPixels: 40_000_000 })
-      .resize(width, height, { fit: "cover" })
+      .resize(width, height, { fit: "cover", position: "centre" })
       .png()
       .toBuffer();
     await atomicFile(join(/* turbopackIgnore: true */ directory, `${id}.png`), rendered);

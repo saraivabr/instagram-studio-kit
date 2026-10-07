@@ -12,7 +12,13 @@ import {
   StudioError,
   SocialError,
 } from "@saraivabr/instagram-studio-kit";
-import { repository, enqueue, claimJob, finishJob } from "./adapters/local/repository";
+import {
+  repository,
+  enqueue,
+  claimJob,
+  finishJob,
+  recoverInterruptedJobs,
+} from "./adapters/local/repository";
 import { localAssets, loadLogo } from "./adapters/local/assets";
 import { mockAiRequest } from "./adapters/demo/ai";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -149,6 +155,7 @@ export async function retryItem(context: RequestContext, id: string) {
 const state = globalThis as typeof globalThis & {
   studioWorker?: ReturnType<typeof setInterval>;
   studioWorking?: boolean;
+  studioWorkerRecovered?: boolean;
   studioWorkerBackoff?: ReturnType<typeof createWorkerBackoff>;
 };
 async function runWorker() {
@@ -156,6 +163,12 @@ async function runWorker() {
   if (state.studioWorking || !backoff.ready()) return;
   state.studioWorking = true;
   try {
+    // globalThis survives dev reloads, so only a new process clears previous running jobs.
+    // If storage is unavailable, leave this unset and retry through the normal backoff.
+    if (!state.studioWorkerRecovered) {
+      recoverInterruptedJobs();
+      state.studioWorkerRecovered = true;
+    }
     const job = claimJob();
     if (!job) {
       backoff.success();

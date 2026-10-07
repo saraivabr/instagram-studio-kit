@@ -19,11 +19,11 @@ const request = (path, method = "GET", body) =>
     headers: { Origin: base, "Content-Type": "application/json" },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-async function stop() {
+async function stop(signal = "SIGTERM") {
   if (!server || server.exitCode !== null) return;
   const child = server;
   const exited = new Promise((resolve) => child.once("exit", resolve));
-  child.kill("SIGTERM");
+  child.kill(signal);
   const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
   await exited;
   clearTimeout(timer);
@@ -89,8 +89,8 @@ const item = (id, status = "generating") => ({
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 });
-async function ready(id, status = "ready") {
-  const deadline = Date.now() + 30000;
+async function ready(id, status = "ready", timeout = 30000) {
+  const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const response = await request(`/api/v1/instagram/${id}`);
     assert.equal(response.status, 200);
@@ -126,12 +126,13 @@ test("legacy migration, restart recovery, ambiguous jobs and transactional quota
     assert.equal((await request(`/api/assets/${originalId}`)).status, 200);
     assert.equal((await ready(interrupted, "failed")).status, "failed");
     assert.equal(await readFile(join(directory, "items.pre-sqlite.json"), "utf8"), legacy);
-    await stop();
     const queued = randomUUID();
+    const recent = randomUUID();
     const stale = randomUUID();
     const db = new DatabaseSync(join(directory, "studio.sqlite"));
     for (const [id, state, started] of [
       [queued, "queued", null],
+      [recent, "running", new Date().toISOString()],
       [stale, "running", new Date(Date.now() - 11 * 60_000).toISOString()],
     ]) {
       const value = item(id);
@@ -161,9 +162,32 @@ test("legacy migration, restart recovery, ambiguous jobs and transactional quota
       JSON.stringify(privateItem),
     );
     db.close();
+    const newId = randomUUID();
+    assert.equal((await request("/api/v1/instagram", "POST", input(newId))).status, 202);
+    const beforeCrash = (await (await request(`/api/v1/instagram/${recent}`)).json()).data;
+    assert.equal(
+      beforeCrash.status,
+      "generating",
+      "Repeated worker startup must not interrupt a current process job",
+    );
+    await stop("SIGKILL");
     await boot();
-    const resumed = await ready(queued);
-    await ready(stale, "failed");
+    const interruptedRecent = await ready(recent, "failed", 10000);
+    assert.match(interruptedRecent.error, /interrompida.*provedor.*cobrada/i);
+    const resumed = await ready(queued, "ready", 10000);
+    await ready(newId, "ready", 10000);
+    await ready(stale, "failed", 10000);
+    const recoveredDb = new DatabaseSync(join(directory, "studio.sqlite"));
+    assert.equal(
+      recoveredDb.prepare("SELECT state FROM jobs WHERE item_id=?").get(recent).state,
+      "failed",
+    );
+    assert.equal(
+      recoveredDb.prepare("SELECT COUNT(*) AS count FROM jobs WHERE item_id=?").get(recent).count,
+      1,
+      "An interrupted intent must not be requeued automatically",
+    );
+    recoveredDb.close();
     assert.equal((await request(`/api/v1/instagram/${privateItem.id}`)).status, 404);
     const timestamp = (await stat(join(directory, resumed.asset_path))).mtimeMs;
     const retry = await request(`/api/v1/instagram/${stale}/retry`, "POST");

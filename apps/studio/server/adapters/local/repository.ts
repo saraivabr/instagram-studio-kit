@@ -376,28 +376,41 @@ export function enqueue(
     return result;
   });
 }
+function interruptJobs(db: DatabaseSync, jobs: { id: string; tenant: string; item_id: string }[]) {
+  for (const job of jobs) {
+    const item = lookup(db, job.tenant, job.item_id);
+    if (item?.status === "generating")
+      complete(db, job.tenant, job.item_id, {
+        status: "failed",
+        error:
+          "Geração interrompida. Confira o provedor antes de tentar novamente; a chamada pode ter sido cobrada.",
+      });
+    db.prepare("UPDATE jobs SET state='failed' WHERE id=? AND state='running'").run(job.id);
+  }
+}
+/** Local adapter supports one server process per store. Never replay an ambiguous paid call. */
+export function recoverInterruptedJobs() {
+  const db = database();
+  transaction(db, () => {
+    const jobs = db.prepare("SELECT id,tenant,item_id FROM jobs WHERE state='running'").all() as {
+      id: string;
+      tenant: string;
+      item_id: string;
+    }[];
+    interruptJobs(db, jobs);
+  });
+}
 export function claimJob(): Job | undefined {
   const db = database();
   return transaction(db, () => {
     const stale = db
-      .prepare("SELECT tenant,item_id FROM jobs WHERE state='running' AND started_at<?")
+      .prepare("SELECT id,tenant,item_id FROM jobs WHERE state='running' AND started_at<?")
       .all(new Date(Date.now() - 10 * 60_000).toISOString()) as {
+      id: string;
       tenant: string;
       item_id: string;
     }[];
-    for (const job of stale) {
-      const item = lookup(db, job.tenant, job.item_id);
-      if (item?.status === "generating")
-        complete(db, job.tenant, job.item_id, {
-          status: "failed",
-          error:
-            "Geração interrompida. Confira o provedor antes de tentar novamente; a chamada pode ter sido cobrada.",
-        });
-      db.prepare("UPDATE jobs SET state='failed' WHERE tenant=? AND item_id=?").run(
-        job.tenant,
-        job.item_id,
-      );
-    }
+    interruptJobs(db, stale);
     if (db.prepare("SELECT id FROM jobs WHERE state='running' LIMIT 1").get()) return;
     const row = db
       .prepare(

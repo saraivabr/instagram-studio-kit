@@ -126,6 +126,62 @@ test("GPT Image defaults use supported sizes for every format", async () => {
   assert.deepEqual(resolveImageSizes("gpt-image-1", { feed: undefined }), defaultImageSizes);
 });
 
+test("every format tells the provider its centered crop and inset text/logo area", async () => {
+  const bodies = [];
+  const ai = createAi(
+    async (_path, body) => {
+      bodies.push(body);
+      return { data: [{ b64_json: png }] };
+    },
+    { image: "gpt-image-1-mini", text: "text-test" },
+  );
+  for (const format of ["feed", "square", "story"]) await ai.createImage("org", postInput(format));
+  const [feed, square, story] = bodies.map((body) => body.prompt);
+  assert.match(feed, /1024x1280, proporção 4:5/);
+  assert.match(feed, /região preservada x=0 até 1024, y=128 até 1408/);
+  assert.match(feed, /Área segura.*x=82 até 942, y=231 até 1305/);
+  assert.match(square, /1024x1024, proporção 1:1/);
+  assert.match(square, /região preservada x=0 até 1024, y=0 até 1024/);
+  assert.match(story, /1152x2048, proporção 9:16/);
+  assert.match(story, /região preservada x=80 até 944, y=0 até 1536/);
+  assert.match(story, /Área segura.*x=150 até 874, y=123 até 1413/);
+  for (const prompt of [feed, square, story]) {
+    assert.match(prompt, /todo texto, letras, logo.*inteiramente dentro da área segura/);
+    assert.match(prompt, /Fora dela use somente fundo/);
+  }
+});
+
+test("custom dimensions and logo edits use the same crop-safe composition rules", async () => {
+  const bodies = [];
+  const ai = createAi(
+    async (path, body, multipart) => {
+      bodies.push(body);
+      assert.equal(path, "images/edits");
+      assert.equal(multipart.get("prompt"), body.prompt);
+      return { data: [{ b64_json: png }] };
+    },
+    { image: "gpt-image-2", text: "text-test" },
+    { imageSizes: { feed: "1536x1024", story: "1152x2048" } },
+  );
+  const logo = { bytes: new Uint8Array(Buffer.from(png, "base64")), type: "image/png" };
+  await ai.createImage("org", postInput("feed"), undefined, logo);
+  await ai.createImage(
+    "org",
+    {
+      ...postInput("story"),
+      carousel: { id: randomUUID(), template: "noticia_impacto_operacional", slide: 1 },
+    },
+    undefined,
+    logo,
+  );
+  assert.match(bodies[0].prompt, /gerada em 1536x1024/);
+  assert.match(bodies[0].prompt, /região preservada x=359 até 1177, y=0 até 1024/);
+  assert.match(bodies[1].prompt, /região preservada x=0 até 1152, y=0 até 2048/);
+  assert.match(bodies[1].prompt, /Área segura.*x=93 até 1059, y=164 até 1884/);
+  assert.match(bodies[1].prompt, /Slide 1\/8/);
+  assert.match(bodies[1].prompt, /logo oficial/);
+});
+
 test("image overrides validate model and geometry before any provider call", async () => {
   let calls = 0;
   const request = async () => {

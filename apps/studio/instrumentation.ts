@@ -1,4 +1,4 @@
-/** Resume persisted queued jobs when the local Node server starts. */
+/** Worker startup recovers interrupted jobs before resuming the persisted queue. */
 export async function register() {
   if (
     process.env.NEXT_RUNTIME === "nodejs" &&

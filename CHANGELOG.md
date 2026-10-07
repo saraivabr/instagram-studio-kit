@@ -1,5 +1,11 @@
 # Mudanças
 
+## 0.2.1 · 07/10/2026
+
+- N-02: na primeira execução do worker em um novo processo, jobs `running` herdados viram falha imediatamente; a fila continua sem esperar dez minutos e sem repetir chamadas ambíguas. Reloads no mesmo processo preservam a execução atual.
+- N-03: prompts de todos os formatos incluem proporção final, recorte central e área segura com margem, calculados a partir do tamanho de geração configurado. Isso vale para post único, carrossel e edição com logo.
+- Regressões cobrem queda real por SIGKILL com job recente, retomada de pedidos novos e prompts padrão/personalizados sem consumir créditos.
+
 ## Correção complementar A-02 · 07/10/2026
 
 - Logs de erros 500 e falhas de jobs/worker incluem nome, mensagem, stack e causas sanitizadas no servidor; resposta pública permanece genérica.
