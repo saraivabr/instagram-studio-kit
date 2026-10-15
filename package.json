@@ -34,9 +34,9 @@
     "url": "https://github.com/saraivabr/instagram-studio-kit.git"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "eslint": "^10.12.0",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "@eslint/js": "^10.0.1",
     "typescript-eslint": "^8.57.2",
     "eslint-plugin-react-hooks": "^7.1.1"
