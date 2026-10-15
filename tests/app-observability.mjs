@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const require = createRequire(import.meta.url);
+const require = createRequire(new URL("../apps/studio/package.json", import.meta.url));
 const appDirectory = fileURLToPath(new URL("../apps/studio", import.meta.url));
 const port = Number(process.env.STUDIO_TEST_PORT || 4319) + 2;
 const base = `http://127.0.0.1:${port}`;
@@ -73,6 +73,8 @@ test(
             OPENAI_IMAGE_SIZE_FEED: "",
             OPENAI_IMAGE_SIZE_SQUARE: "",
             OPENAI_IMAGE_SIZE_STORY: "",
+            ZERNIO_API_KEY: "",
+            ZERNIO_PROFILE_ID: "",
             STUDIO_DAILY_GENERATION_LIMIT: "20",
             STUDIO_ESTIMATED_GENERATION_COST_USD: "0",
             STUDIO_DAILY_BUDGET_USD: "0",

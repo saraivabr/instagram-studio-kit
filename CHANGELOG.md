@@ -1,5 +1,14 @@
 # Mudanças
 
+## 0.3.0 · 14/10/2026
+
+- Patch de segurança do Next.js 16.3.8 para atender a auditoria de dependências.
+- Integração Zernio executável no aplicativo: configurar chave, resolver perfil por organização, conectar/reconectar/desconectar conta profissional.
+- Publicação de feed, carrossel e Story com JPEG privado, upload presignado, intenção durável, exclusão de envios duplicados e reconciliação sem reenvio.
+- Métricas e automações ligadas ao SDK; mutações de automações exigem confirmação explícita.
+- Z-01–Z-05: recibo sem accountId em alvo único, timeout maior no envio, 409 em processamento, cancelled terminal e mensagens distintas para 401/403.
+- Testes com Zernio simulada; publicação/OAuth em conta profissional real exigem validação autorizada.
+
 ## 0.2.1 · 07/10/2026
 
 - N-02: na primeira execução do worker em um novo processo, jobs `running` herdados viram falha imediatamente; a fila continua sem esperar dez minutos e sem repetir chamadas ambíguas. Reloads no mesmo processo preservam a execução atual.

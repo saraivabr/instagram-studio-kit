@@ -4,7 +4,7 @@ import { parseSocialResponse, socialRequest, SocialError, validateSocialId } fro
 const providerPostId = z.string().regex(/^[A-Za-z0-9_-]{1,200}$/);
 const targetSchema = z.object({
   platform: z.string(),
-  accountId: z.union([z.string(), z.object({ _id: z.string() })]),
+  accountId: z.union([z.string(), z.object({ _id: z.string() })]).optional(),
   status: z.string().optional(),
   platformPostUrl: z.string().nullish(),
   error: z.unknown().optional(),
@@ -29,14 +29,22 @@ export function publicationResult(value: unknown, accountId: string) {
     throw new SocialError(
       "Não foi possível confirmar a publicação. Atualize o resultado antes de tentar novamente.",
     );
-  const target = post.platforms.find(
-    (p) =>
-      p.platform === "instagram" &&
-      (typeof p.accountId === "string" ? p.accountId : p.accountId._id) === accountId,
-  );
+  const target =
+    post.platforms.find(
+      (p) =>
+        p.platform === "instagram" &&
+        (typeof p.accountId === "string" ? p.accountId : p.accountId?._id) === accountId,
+    ) ??
+    (post.platforms.length === 1 &&
+    post.platforms[0]?.platform === "instagram" &&
+    post.platforms[0].accountId === undefined
+      ? post.platforms[0]
+      : undefined);
   if (!target) throw new SocialError("A publicação retornada não corresponde à conta escolhida.");
   const published = target.status === "published";
-  const failed = !published && (target.status === "failed" || post.status === "failed");
+  const cancelled = target.status === "cancelled" || post.status === "cancelled";
+  const failed =
+    !published && (cancelled || target.status === "failed" || post.status === "failed");
   let permalink: string | null = null;
   if (target.platformPostUrl) {
     // A malformed optional link must never turn a confirmed publication into a retry.
@@ -57,14 +65,12 @@ export function publicationResult(value: unknown, accountId: string) {
     provider_post_id: post._id,
     status: published ? "published" : failed ? "failed" : "pending",
     permalink,
-    error: failed
-      ? target.errorMessage
-          ?.replace(/https?:\/\/\S+/g, "[link protegido]")
-          .replace(/\bsk-[A-Za-z0-9_-]+|Bearer\s+\S+/gi, "[credencial protegida]")
-          .replace(/(?:Bearer\s+)?[A-Za-z0-9_.-]{40,}/g, "[identificador protegido]")
-          .slice(0, 500) ||
-        "O Instagram recusou a publicação. Confira a conexão, o formato e as permissões antes de criar um novo envio."
-      : null,
+    error:
+      failed && cancelled
+        ? "A publicação foi cancelada no provedor. Confira o histórico antes de criar um novo envio."
+        : failed
+          ? "O Instagram recusou a publicação. Confira se a conta é profissional (Empresa ou Criador), a conexão, o formato e as permissões antes de criar um novo envio."
+          : null,
   } as const;
 }
 export async function publishInstagram(

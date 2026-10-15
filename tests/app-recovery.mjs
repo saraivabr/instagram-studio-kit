@@ -7,7 +7,7 @@ import { mkdir, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-const require = createRequire(import.meta.url);
+const require = createRequire(new URL("../apps/studio/package.json", import.meta.url));
 const directory = join(process.env.STUDIO_DATA_DIR, "recovery");
 const port = Number(process.env.STUDIO_TEST_PORT || 4319) + 1;
 const base = `http://127.0.0.1:${port}`;
@@ -47,6 +47,8 @@ async function boot(overrides = {}) {
         STUDIO_DAILY_GENERATION_LIMIT: "20",
         STUDIO_DAILY_BUDGET_USD: "0",
         STUDIO_ESTIMATED_GENERATION_COST_USD: "0",
+        ZERNIO_API_KEY: "",
+        ZERNIO_PROFILE_ID: "",
         ...overrides,
       },
       stdio: ["ignore", "pipe", "pipe"],

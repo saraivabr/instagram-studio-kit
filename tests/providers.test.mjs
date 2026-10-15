@@ -668,3 +668,261 @@ test("malformed social provider responses are upstream errors, not user validati
     (error) => error instanceof SocialError && error.status === 502,
   );
 });
+
+test("single Instagram receipt can omit accountId without losing a confirmed publication", () => {
+  // The provider documentation omits accountId in this single-target response shape.
+  const documented = {
+    post: {
+      _id: "65f1c0a9e2b5af0012ab34cd",
+      status: "published",
+      platforms: [
+        {
+          platform: "instagram",
+          status: "published",
+          platformPostUrl: "https://www.instagram.com/p/C1a2B3c4D5e/",
+        },
+      ],
+    },
+  };
+  assert.equal(publicationResult(documented, account).status, "published");
+  assert.equal(
+    publicationResult(documented, account).permalink,
+    "https://www.instagram.com/p/C1a2B3c4D5e/",
+  );
+  assert.equal(publicationResult({ existingPost: documented.post }, account).status, "published");
+  assert.equal(
+    publicationResult(
+      { post: { ...documented.post, platforms: [{ platform: "instagram", status: "pending" }] } },
+      account,
+    ).status,
+    "pending",
+  );
+});
+
+test("missing accountId never confirms an ambiguous, foreign or malformed target", () => {
+  const missing = { platform: "instagram", status: "published" };
+  const rejectedTargets = [
+    [],
+    [missing, missing],
+    [missing, { platform: "facebook", status: "published" }],
+    [{ platform: "facebook", status: "published" }],
+    [{ ...missing, accountId: otherAccount }],
+    [{ ...missing, accountId: { _id: otherAccount } }],
+    [{ ...missing, accountId: "" }],
+    [{ ...missing, accountId: null }],
+  ];
+  for (const platforms of rejectedTargets)
+    assert.throws(() => publicationResult(receipt({}, { platforms }), account), SocialError);
+  // An explicit account match remains valid when other platform targets exist.
+  assert.equal(
+    publicationResult(
+      receipt(
+        {},
+        {
+          platforms: [
+            { ...missing, accountId: account },
+            { platform: "facebook", status: "failed" },
+          ],
+        },
+      ),
+      account,
+    ).status,
+    "published",
+  );
+});
+
+test("published response without accountId works through publish, read and reconciliation", async (t) => {
+  const id = randomUUID();
+  const post = receipt({ accountId: undefined }, { metadata: { studio_publication_id: id } }).post;
+  const calls = mockSocial(t, ({ url }) =>
+    url.searchParams.has("profileId") ? { posts: [post] } : { post },
+  );
+  assert.equal(
+    (
+      await publishInstagram(
+        "test-key",
+        { id, account_id: account, format: "feed", caption: "Legenda" },
+        ["https://assets.example/post.png"],
+      )
+    ).status,
+    "published",
+  );
+  assert.equal(
+    (await readInstagramPublication("test-key", "provider-post", account)).status,
+    "published",
+  );
+  assert.equal(
+    (await findInstagramPublication("test-key", profile, id, account)).status,
+    "published",
+  );
+  assert.equal(calls.filter((call) => call.options.method === "POST").length, 1);
+});
+
+test("cancelled publications become terminal failures with a dedicated safe message", () => {
+  for (const value of [
+    receipt({
+      status: "cancelled",
+      errorMessage: "Bearer sensitive sk-secret https://private.example",
+    }),
+    receipt({ status: "pending" }, { status: "cancelled" }),
+  ]) {
+    const result = publicationResult(value, account);
+    assert.equal(result.status, "failed");
+    assert.match(result.error, /cancelada/i);
+    assert.doesNotMatch(result.error, /sensitive|sk-secret|private\.example/);
+  }
+  const confirmed = publicationResult(receipt({}, { status: "cancelled" }), account);
+  assert.equal(confirmed.status, "published");
+  assert.equal(confirmed.error, null);
+});
+
+test("failed and cancelled receipts never expose arbitrary provider error strings", () => {
+  const upstreamText =
+    "token=short123 password=private456 api_key=custom789 custom-prefix-secret abc123";
+  for (const status of ["failed", "cancelled"]) {
+    const result = publicationResult(
+      receipt({ status, errorMessage: upstreamText, error: { rawKey: "arbitrary-private-key" } }),
+      account,
+    );
+    assert.equal(result.status, "failed");
+    assert.doesNotMatch(
+      JSON.stringify(result),
+      /short123|private456|custom789|custom-prefix-secret|abc123|arbitrary-private-key|password=|api_key=/,
+    );
+    if (status === "failed") {
+      assert.match(result.error, /profissional.*conexão.*formato.*permissões/);
+      assert.equal(result.error, publicationResult(receipt({ status }), account).error);
+    } else assert.match(result.error, /cancelada/);
+  }
+});
+
+test("only POST posts gets 120 seconds; reads, mutation and disconnect keep 15 seconds", async (t) => {
+  const deadlines = [];
+  t.mock.method(AbortSignal, "timeout", (duration) => {
+    deadlines.push(duration);
+    return new globalThis.AbortController().signal;
+  });
+  const calls = mockSocial(t, ({ options }) =>
+    options.method === "DELETE" ? new Response(null, { status: 204 }) : { success: true },
+  );
+  await socialRequest("test-key", "posts", { publishNow: true });
+  await socialRequest("test-key", "posts", undefined, { method: "POST" });
+  await socialRequest("test-key", "posts?limit=100", { publishNow: true });
+  await socialRequest("test-key", "posts");
+  await socialRequest("test-key", "posts/provider-post");
+  await socialRequest(
+    "test-key",
+    `comment-automations/${automationId}`,
+    { isActive: false },
+    { method: "PATCH" },
+  );
+  assert.equal(
+    await socialRequest("test-key", `accounts/${account}`, undefined, { method: "DELETE" }),
+    undefined,
+  );
+  assert.deepEqual(deadlines, [120_000, 120_000, 120_000, 15_000, 15_000, 15_000, 15_000]);
+  assert.equal(calls.at(-1).options.method, "DELETE");
+  assert.equal(calls.at(-1).options.body, undefined);
+});
+
+test("idempotency conflict preserves 409 and processing state without automatic resend", async (t) => {
+  const calls = mockSocial(
+    t,
+    () =>
+      new Response(
+        JSON.stringify({
+          code: "idempotency_conflict",
+          error: "Bearer private-key https://private.example",
+          details: { secret: "do-not-expose" },
+        }),
+        { status: 409, headers: { "Retry-After": "10" } },
+      ),
+  );
+  await assert.rejects(
+    publishInstagram(
+      "test-key",
+      { id: randomUUID(), account_id: account, format: "feed", caption: "Legenda" },
+      ["https://assets.example/post.png"],
+    ),
+    (error) => {
+      assert.ok(error instanceof SocialError);
+      assert.equal(error.status, 409);
+      assert.equal(error.upstreamStatus, 409);
+      assert.equal(error.upstreamCode, "idempotency_conflict");
+      assert.match(error.message, /processamento.*atualize/i);
+      assert.doesNotMatch(error.message, /private|do-not-expose|Bearer/);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 1);
+});
+
+test("other conflicts stay 409 without falsely claiming a publish is processing", async (t) => {
+  const calls = mockSocial(
+    t,
+    (_call, count) =>
+      new Response(
+        count === 1
+          ? JSON.stringify({ code: "duplicate_content", error: "sk-private" })
+          : "not-json",
+        { status: 409 },
+      ),
+  );
+  for (let index = 0; index < 2; index++)
+    await assert.rejects(socialRequest("test-key", "posts", { publishNow: true }), (error) => {
+      assert.equal(error.status, 409);
+      assert.equal(error.upstreamStatus, 409);
+      assert.equal(error.upstreamCode, undefined);
+      assert.match(error.message, /conflito/);
+      assert.doesNotMatch(error.message, /processamento|sk-private|not-json/);
+      return true;
+    });
+  assert.equal(calls.length, 2);
+});
+
+test("invalid key and permissions or plan failures have distinct sanitized statuses", async (t) => {
+  mockSocial(
+    t,
+    (_call, count) =>
+      new Response('{"error":"Bearer private-token","platformError":{"secret":"sk-secret"}}', {
+        status: count === 1 ? 401 : 403,
+      }),
+  );
+  await assert.rejects(socialRequest("test-key", "profiles"), (error) => {
+    assert.equal(error.status, 401);
+    assert.equal(error.upstreamStatus, 401);
+    assert.match(error.message, /chave.*inválida|expirou/i);
+    assert.doesNotMatch(error.message, /private-token|sk-secret/);
+    return true;
+  });
+  await assert.rejects(socialRequest("test-key", "profiles"), (error) => {
+    assert.equal(error.status, 403);
+    assert.equal(error.upstreamStatus, 403);
+    assert.match(error.message, /permissões.*plano/i);
+    assert.doesNotMatch(error.message, /inválida|private-token|sk-secret/);
+    return true;
+  });
+});
+
+test("publication timeout stays uncertain to the caller and never retries the POST", async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    throw new globalThis.DOMException("Bearer private-key", "TimeoutError");
+  });
+  await assert.rejects(
+    publishInstagram(
+      "test-key",
+      { id: randomUUID(), account_id: account, format: "feed", caption: "Legenda" },
+      ["https://assets.example/post.png"],
+    ),
+    (error) => {
+      assert.equal(error.status, 504);
+      assert.equal(error.upstreamStatus, undefined);
+      assert.match(error.message, /Consulte o resultado/);
+      assert.doesNotMatch(error.message, /private-key|Bearer/);
+      return true;
+    },
+  );
+  assert.equal(calls, 1);
+});

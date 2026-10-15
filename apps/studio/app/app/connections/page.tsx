@@ -1,14 +1,32 @@
-import Link from "next/link";
-import { StudioShell, Intro, Notice } from "@/features/instagram/components/shared";
-export default function Page() {
-  return (
-    <StudioShell>
-      <Intro title="Conectar Instagram" />
-      <Notice>
-        Esta instalação preserva o módulo visual original. Para conectar uma conta real, implemente
-        o adapter social e a autorização descritos em docs/integration.md.
-      </Notice>
-      <Link href="/app/instagram">Voltar ao Instagram</Link>
-    </StudioShell>
-  );
+import {
+  InstagramConnections,
+  type ConnectionFeedback,
+} from "@/features/instagram/components/connections";
+
+export const metadata = { title: "Conectar Instagram | Instagram Studio" };
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  let feedback: ConnectionFeedback = null;
+  if (
+    params.error === "oauth_denied" ||
+    params.error === "access_denied" ||
+    params.oauth_denied === "1" ||
+    params.oauth_denied === "true"
+  ) {
+    feedback = "denied";
+  } else if (
+    params.error !== undefined ||
+    params.error_message !== undefined ||
+    params.oauth_denied !== undefined
+  ) {
+    feedback = "failed";
+  } else if (params.connected === "instagram") {
+    feedback = "connected";
+  }
+  return <InstagramConnections feedback={feedback} />;
 }

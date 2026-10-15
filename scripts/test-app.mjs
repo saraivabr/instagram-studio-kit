@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-const require = createRequire(import.meta.url);
+const require = createRequire(new URL("../apps/studio/package.json", import.meta.url));
 const appDirectory = fileURLToPath(new URL("../apps/studio", import.meta.url));
 const port = Number(process.env.STUDIO_TEST_PORT || 4319);
 const base = `http://127.0.0.1:${port}`;
@@ -20,7 +20,9 @@ const testEnvironment = {
   OPENAI_IMAGE_SIZE_FEED: "",
   OPENAI_IMAGE_SIZE_SQUARE: "",
   OPENAI_IMAGE_SIZE_STORY: "",
-  STUDIO_DAILY_GENERATION_LIMIT: "20",
+  ZERNIO_API_KEY: "",
+  ZERNIO_PROFILE_ID: "",
+  STUDIO_DAILY_GENERATION_LIMIT: "100",
   STUDIO_ESTIMATED_GENERATION_COST_USD: "0",
   STUDIO_DAILY_BUDGET_USD: "0",
 };
@@ -88,6 +90,7 @@ try {
   if (!process.exitCode) process.exitCode = await runTests(["--test", "tests/app-recovery.mjs"]);
   if (!process.exitCode)
     process.exitCode = await runTests(["--test", "tests/app-observability.mjs"]);
+  if (!process.exitCode) process.exitCode = await runTests(["--test", "tests/app-social.mjs"]);
 } catch (error) {
   console.error(error.message);
   console.error(logs);

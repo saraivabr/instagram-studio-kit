@@ -87,11 +87,21 @@ O app lê `apps/studio/.env.local`; `.env` na raiz não é uma configuração au
 
 `publishInstagram` envia imediatamente e não oferece sozinho persistência, autenticação ou autorização. Headers e metadata ajudam a correlacionar; não substituem claim atômico. Reconciliação consulta apenas os 100 registros retornados: não encontrar não prova ausência. Só o recibo da conta alvo com `published` confirma publicação. Permalink inválido resulta em `null` e preserva essa confirmação.
 
-O aplicativo local mantém publicação e telas sociais desconectadas; integrar uma chave não as habilita automaticamente. Não existe variável `ZERNIO_API_KEY` consumida pelo app nesta versão. Conecte explicitamente os adapters sociais, armazenamento de credenciais e autorização do seu produto.
+O aplicativo consome `ZERNIO_API_KEY` exclusivamente no servidor. `ZERNIO_PROFILE_ID` é opcional: o app busca o perfil por `externalId` da organização ou cria um, guardando o ID por organização e escopo de credencial no SQLite. Perfis salvos são conferidos no provedor; 404 permite nova busca/criação. Trocar a chave requer reiniciar e conectar o Instagram da nova conta Zernio, sem editar código. Um `ZERNIO_PROFILE_ID` explícito deve pertencer à instalação/organização; hosts com múltiplos tenants devem fornecer configuração por tenant.
+
+`server/social.ts` liga as rotas ao SDK, e `server/adapters/local/social-store.ts` persiste perfis e intenções. `GET /api/v1/instagram/connections` lista contas do perfil; `POST` inicia OAuth com `{action:"connect", account_id?}` (reconexão) ou desconecta com `{action:"disconnect", account_id, confirmed:true}`. O destino OAuth é `/app/connections`; o retorno mostra sucesso/erro e recarrega a lista autoritativa. Apenas conta profissional Empresa/Criador pode publicar. A chave nunca vai ao cliente; `/config` expõe somente `social.configured` e orientação.
+
+O upload converte PNG privado em JPEG 1080×1350, 1080×1080 ou 1080×1920, usa `media/presign` e faz PUT sem Authorization no storage presignado da Zernio. O app valida os hosts de storage e recusa redirects. URLs temporárias expiram após sete dias; publicação ocorre na mesma operação, sem torná-las assets públicos do app.
+
+O claim atômico impede dois envios para o mesmo UUID e bloqueia novos UUIDs com imagens sobrepostas enquanto um envio à mesma conta estiver pendente. POST repetido responde 409. GET `/publish` reconcilia estados `sending`, `pending` e `uncertain` somente por leitura, persistindo o recibo. Uma preparação interrompida antes do envio vira falha no refresh; durante uma operação viva no mesmo processo ela permanece em preparação. Envios vinculados a outra chave/perfil ficam no histórico para conferência na conexão original. Não encontrar um post entre os 100 retornados continua significando resultado incerto, jamais autorização para reenviar.
+
+O SDK dá 120 segundos a POST `posts`, preserva o 409 `idempotency_conflict` como em processamento, distingue 401 de 403 e trata `cancelled` como falha terminal. A resposta sem `platforms[].accountId` só é aceita quando há um único alvo Instagram e nenhum ID contraditório. Um recibo sem link válido preserva o estado confirmado; Stories podem não fornecer permalink permanente.
+
+Referências: [OAuth](https://docs.zernio.com/connect/get-connect-url), [perfis multi-tenant](https://docs.zernio.com/multi-tenant), [upload de mídia](https://docs.zernio.com/guides/media-uploads) e [publicação](https://docs.zernio.com/posts/create-post).
 
 ## Comentários, Direct e métricas
 
-`mutateAutomation(context, input)` valida a operação e a propriedade de conta, postagem e regra. A criação vai ao executor Zernio; o SDK não executa Direct localmente. Ativar uma regra pode enviar mensagens reais. O anfitrião fornece permissões de gerenciamento, ação explícita e auditoria.
+`mutateAutomation(context, input)` valida a operação e a propriedade de conta, postagem e regra. A criação vai ao executor Zernio; o SDK não executa Direct localmente. A rota do app exige `confirmed:true` para criar, editar, ativar ou pausar uma regra; a interface pede confirmação. Ativar uma regra pode enviar mensagens reais. O anfitrião fornece permissões de gerenciamento, ação explícita e auditoria.
 
 Para logs, liste `instagramAutomations(context)`, verifique que o ID pertence à organização e consulte `comment-automations/{id}/logs?limit=50` com `socialRequest`, validando com `automationLogSchema`. `instagramInsights` consulta contas Instagram ativas do perfil e preserva as métricas indisponíveis; ausência não é zero. Mensagem enviada não prova leitura, lead ou venda.
 

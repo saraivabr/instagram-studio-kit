@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import Image from "next/image";
@@ -7,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { randomId } from "@/lib/random-id";
 import type { StudioItem } from "@saraivabr/instagram-studio-kit/schemas";
 import type { Publication } from "@saraivabr/instagram-studio-kit/schemas";
-import { Notice, studioApi } from "@/features/instagram/components/shared";
+import { Notice, studioApi, thumbnailUrl } from "@/features/instagram/components/shared";
 type State = {
   accounts: { id: string; username: string; active: boolean }[];
   publications: Publication[];
   can_publish: boolean;
+  message?: string;
 };
 const labels: Record<Publication["status"], string> = {
   preparing: "Preparando imagens",
@@ -21,15 +23,16 @@ const labels: Record<Publication["status"], string> = {
   failed: "Falhou",
   uncertain: "Aguardando confirmação",
 };
-export function PublishPost({
-  item,
-  caption,
-  carouselItems,
-}: {
+type PublishPostProps = {
   item: StudioItem;
   caption: string;
   carouselItems?: StudioItem[];
-}) {
+};
+export function PublishPost(props: PublishPostProps) {
+  const { activeOrg } = useAuth();
+  return <PublishPostForOrganization key={`${activeOrg?.orgId}:${props.item.id}`} {...props} />;
+}
+function PublishPostForOrganization({ item, caption, carouselItems }: PublishPostProps) {
   const t = useT();
   const [state, setState] = useState<State>();
   const [account, setAccount] = useState("");
@@ -42,19 +45,23 @@ export function PublishPost({
   const [reviewing, setReviewing] = useState(false);
   const intent = useRef<{ fingerprint: string; id: string } | null>(null);
   const story = item.input.kind === "post" && item.input.format === "story";
-  async function load() {
-    const value = await studioApi<State>("/publish");
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const value = await studioApi<State>("/publish", { signal, cache: "no-store" });
+    if (signal?.aborted) return;
     setState(value);
-    setAccount((current) => current || value.accounts.find((a) => a.active)?.id || "");
-  }
-  useEffect(() => {
-    void studioApi<State>("/publish")
-      .then((value) => {
-        setState(value);
-        setAccount(value.accounts.find((a) => a.active)?.id ?? "");
-      })
-      .catch((e) => setError(e.message));
+    setAccount((current) =>
+      value.accounts.some((a) => a.id === current && a.active)
+        ? current
+        : value.accounts.find((a) => a.active)?.id || "",
+    );
   }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal).catch((e) => {
+      if (!controller.signal.aborted) setError(e.message);
+    });
+    return () => controller.abort();
+  }, [load]);
   const publications = state?.publications.filter((p) => p.item_ids.includes(item.id)) ?? [];
   const unresolved = publications.some((p) =>
     ["sending", "uncertain", "pending", "preparing"].includes(p.status),
@@ -94,6 +101,7 @@ export function PublishPost({
       {error && <Notice error>{error}</Notice>}
       {state && (
         <>
+          {state.message && <Notice>{state.message}</Notice>}
           <label className="block space-y-2">
             <span className="text-sm">{t("Conta que vai publicar")}</span>
             <select
@@ -116,7 +124,7 @@ export function PublishPost({
             <details
               onToggle={(e) => {
                 if (e.currentTarget.open && !library.length)
-                  void studioApi<{ items: StudioItem[] }>("")
+                  void studioApi<{ items: StudioItem[] }>("?kind=post&status=ready")
                     .then((r) =>
                       setLibrary(
                         r.items.filter(
@@ -163,7 +171,7 @@ export function PublishPost({
                     {i.image_url && (
                       <Image
                         unoptimized
-                        src={i.image_url}
+                        src={thumbnailUrl(i)!}
                         alt={i.input.kind === "post" ? i.input.brief : "Criação"}
                         width={120}
                         height={150}
@@ -255,19 +263,7 @@ export function PublishPost({
               void (async () => {
                 setBusy(true);
                 try {
-                  if (state.can_publish)
-                    for (const p of publications) {
-                      await studioApi("/publish", {
-                        method: "POST",
-                        body: JSON.stringify({
-                          id: p.id,
-                          account_id: p.account_id,
-                          item_ids: p.item_ids,
-                          format: p.format,
-                          caption: p.caption,
-                        }),
-                      });
-                    }
+                  setError("");
                   await load();
                 } catch (e) {
                   setError(e instanceof Error ? e.message : "Não foi possível atualizar.");

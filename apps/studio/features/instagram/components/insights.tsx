@@ -1,6 +1,7 @@
 "use client";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +20,7 @@ type Result = {
     metrics: Record<string, { total: number }>;
   };
   checked_at?: string;
+  message?: string;
 };
 const metrics = [
   { key: "reach", title: "Pessoas alcançadas", description: "Quantas contas viram seu conteúdo." },
@@ -35,6 +37,10 @@ const metrics = [
   },
 ];
 export function Insights() {
+  const { activeOrg } = useAuth();
+  return <InsightsForOrganization key={activeOrg?.orgId} />;
+}
+function InsightsForOrganization() {
   const t = useT();
   const locale = useTagDeIdioma();
   const [data, setData] = useState<Result | null>(null);
@@ -86,6 +92,7 @@ export function Insights() {
           </button>
         </Notice>
       )}
+      {data?.message && <Notice>{data.message}</Notice>}
       {loading ? (
         <Loading />
       ) : data && !data.connected ? (

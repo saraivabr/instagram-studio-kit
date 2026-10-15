@@ -26,7 +26,7 @@ Descreva o negócio e o que você quer comunicar. O estúdio cria a arte e a leg
 | **Referências**       | Perfis salvos e pesquisa com fontes verificáveis quando a IA está configurada              |
 | **Instagram**         | Adapters Zernio para publicação, recibos, automações e métricas                            |
 
-O aplicativo local permite experimentar criação e revisão. Publicação, Direct e métricas reais exigem conectar os serviços sociais e a autorização do seu produto.
+O aplicativo inclui conexão e publicação no Instagram pela Zernio, além de métricas e automações. Sem credenciais sociais, a criação e a revisão continuam disponíveis.
 
 ## Comece em poucos passos
 
@@ -69,6 +69,24 @@ OPENAI_IMAGE_SIZE_STORY=1152x2048
 
 Esses overrides exigem um modelo compatível, como GPT Image 2; tamanhos incompatíveis são recusados antes da chamada. Consulte a [referência oficial de imagens](https://developers.openai.com/api/reference/resources/images/methods/generate) e a disponibilidade da sua conta. A compatibilidade foi verificada por validação e transporte simulado; esta versão não afirma teste de geração pago com chave real.
 
+### Conecte e publique no Instagram
+
+No mesmo arquivo **`apps/studio/.env.local`**, configure e reinicie:
+
+```dotenv
+ZERNIO_API_KEY=sua_chave_zernio
+# Opcional; vazio = perfil criado/encontrado automaticamente por organização.
+ZERNIO_PROFILE_ID=
+```
+
+Abra **Conexões → Conectar Instagram** e autorize uma conta profissional (**Empresa ou Criador de conteúdo**). Contas pessoais não publicam pela API. A tela lista também contas conectadas diretamente no painel da Zernio, permite reconectar e pede confirmação antes de desconectar.
+
+Na revisão de uma arte pronta, escolha a conta, revise a legenda e confirme a publicação. O app publica **feed, carrossel de 2 a 10 imagens (o gerador cria oito) e Story**. Ele prepara JPEGs, envia ao armazenamento temporário da Zernio e guarda a intenção e o recibo no SQLite. **Atualizar resultado somente consulta:** nunca repete um envio pendente ou incerto. Um mesmo UUID não cria outro post. Se a confirmação não chegou, confira o resultado antes de iniciar uma nova tentativa.
+
+Para trocar para a Zernio da empresa, substitua apenas `ZERNIO_API_KEY` e reinicie. Perfis e conexões pertencem à conta dona da chave: será necessário **conectar o Instagram novamente**. Com `ZERNIO_PROFILE_ID` vazio, o app encontra ou cria o perfil da organização na nova conta. Um perfil salvo que foi excluído também é recuperado automaticamente. Publicações anteriores preservam seu histórico e não são reenviadas na nova conexão.
+
+As telas **Resultados** e **Automações** usam a conta conectada. Salvar ou ativar uma automação exige confirmação, pois ela pode enviar mensagens reais no Direct. Chaves ficam somente no servidor; nunca use `NEXT_PUBLIC_*` nem envie chaves ao navegador. OAuth e publicação reais precisam ser validados com uma conta profissional autorizada; os testes automáticos usam um provedor simulado e não consomem créditos nem publicam conteúdo.
+
 ### Limites de geração
 
 O aplicativo reserva no banco **20 gerações por organização por dia UTC**, por padrão. Uma pesquisa conta como uma geração; um carrossel completo reserva oito. Duplicar o mesmo UUID não reserva nem gera de novo. Tentativas novas e pedidos que falharam contam para o limite.
@@ -98,7 +116,7 @@ Use **`apps/studio/`** dentro do workspace. As telas ficam em `features/instagra
 | API e integrações sociais        | `server/http/handler.ts` e SDK `/social`                            |
 | Idioma e interface               | `hooks/i18n/` e `features/instagram/components/`                    |
 
-Os caminhos são relativos a `apps/studio/`. A API já usa o resolvedor de sessão, organização e marca para cada requisição, incluindo autorização de escrita. Os adapters fornecidos ainda retornam **uma identidade local fixa** e uma marca de exemplo: substitua-os junto com a identidade no frontend antes de hospedar. OAuth da Meta e login de produção não estão implementados.
+Os caminhos são relativos a `apps/studio/`. A API já usa o resolvedor de sessão, organização e marca para cada requisição, incluindo autorização de escrita. Os adapters fornecidos ainda retornam **uma identidade local fixa** e uma marca de exemplo: substitua-os junto com a identidade no frontend antes de hospedar. O fluxo OAuth do Instagram é conduzido pela Zernio; o login de produção do seu produto continua sendo responsabilidade do anfitrião.
 
 A persistência local usa SQLite, paginação por cursor, leitura direta por ID e uma fila durável. Ela atende uma instalação em disco persistente. Para múltiplas instâncias ou serverless, conecte banco, storage privado e worker/fila da sua infraestrutura. Leia o [guia de integração](docs/integration.md) antes de copiar o app isoladamente.
 
@@ -109,7 +127,7 @@ Use **`packages/core/`**. O SDK independe de Next.js e do CRM.
 ```bash
 npm run pack:core
 # No projeto que vai receber o módulo:
-npm install /caminho/saraivabr-instagram-studio-kit-0.2.1.tgz
+npm install /caminho/saraivabr-instagram-studio-kit-0.3.0.tgz
 ```
 
 O pacote **não está publicado no npm**. Distribua o tarball ou mantenha a dependência local; não substitua por um nome de registro sem verificar o publicador.

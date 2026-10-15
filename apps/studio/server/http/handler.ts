@@ -23,6 +23,16 @@ import {
 } from "@/server/runtime";
 import { HttpError } from "../errors";
 import { logFailure } from "../diagnostics.mjs";
+import {
+  socialConfiguration,
+  connections,
+  changeConnection,
+  publicationState,
+  publish,
+  insights,
+  growth,
+  changeGrowth,
+} from "../social";
 const listSchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).default(24),
@@ -127,7 +137,16 @@ export async function handleStudioRequest(req: NextRequest) {
     }
     if (path === "/api/v1/instagram/config") {
       allow("GET");
-      return respond(configuration());
+      const config = configuration();
+      const social = socialConfiguration();
+      return respond({
+        ...config,
+        message:
+          config.mode === "demo" && social.configured
+            ? "Artes de demonstração, sem custos de IA. A Zernio está configurada: publicações e automações podem executar ações reais após sua confirmação."
+            : config.message,
+        social,
+      });
     }
     if (path === "/api/v1/instagram") {
       allow("GET", "POST");
@@ -163,30 +182,29 @@ export async function handleStudioRequest(req: NextRequest) {
     }
     if (path === "/api/v1/instagram/account") {
       allow("GET");
-      return respond({ account: null });
+      const state = await connections(context);
+      return respond({ account: state.accounts.find((account) => account.active) ?? null });
+    }
+    if (path === "/api/v1/instagram/connections") {
+      allow("GET", "POST");
+      if (req.method === "GET") return respond(await connections(context));
+      return respond(await changeConnection(context, await readJson(req), requestOrigin.origin));
     }
     if (path === "/api/v1/instagram/insights") {
       allow("GET");
-      return respond({ connected: false, accounts: [] });
+      return respond(
+        await insights(context, req.nextUrl.searchParams.get("account_id") ?? undefined),
+      );
     }
     if (path === "/api/v1/instagram/publish") {
       allow("GET", "POST");
-      if (req.method === "GET")
-        return respond({ accounts: [], publications: [], can_publish: false });
-      throw new HttpError(
-        503,
-        "social_unconfigured",
-        "Conecte seu adapter social e autorização antes de publicar.",
-      );
+      if (req.method === "GET") return respond(await publicationState(context));
+      return respond(await publish(context, await readJson(req)));
     }
     if (path === "/api/v1/growth/instagram") {
       allow("GET", "POST");
-      if (req.method === "GET") return respond({ automations: [], accounts: [], can_edit: false });
-      throw new HttpError(
-        503,
-        "social_unconfigured",
-        "Integre o executor social antes de ativar automações.",
-      );
+      if (req.method === "GET") return respond(await growth(context, req.nextUrl.searchParams));
+      return respond(await changeGrowth(context, await readJson(req)));
     }
     const retry = /^\/api\/v1\/instagram\/([^/]+)\/retry$/.exec(path);
     if (retry) {

@@ -46,7 +46,7 @@ function storedJson<T>(value: string, label: string): T {
     });
   }
 }
-function database() {
+export function database() {
   if (state.studioDb) return state.studioDb;
   mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(join(dataDirectory, "studio.sqlite"));

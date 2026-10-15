@@ -12,12 +12,100 @@ import type {
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { randomId } from "@/lib/random-id";
+import { Notice } from "./shared";
 
 type State = {
   automations: InstagramAutomation[];
   accounts: { id: string; username: string; active: boolean }[];
   can_edit: boolean;
+  message?: string;
 };
+type AutomationMutation =
+  | {
+      action: "create" | "edit";
+      id: string;
+      rule: {
+        name: string;
+        account_id: string;
+        post_id: string;
+        keywords: string[];
+        match_mode: string;
+        dm_response_template: string;
+        comment_reply: string;
+      };
+    }
+  | { action: "toggle"; id: string; is_active: boolean };
+type Confirmation = { request: AutomationMutation; name: string };
+
+function ConfirmAutomation({
+  confirmation,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  confirmation: Confirmation;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  const request = confirmation.request;
+  const activating =
+    request.action === "create" || (request.action === "toggle" && request.is_active);
+  const pausing = request.action === "toggle" && !request.is_active;
+  return (
+    <Notice>
+      <h3 className="font-semibold">
+        {t(
+          activating
+            ? "Ativar esta automação?"
+            : pausing
+              ? "Pausar esta automação?"
+              : "Salvar estas alterações?",
+        )}
+      </h3>
+      <p className="mt-2 font-medium">{confirmation.name}</p>
+      <p className="mt-2">
+        {t(
+          activating
+            ? "Ela ficará ativa e poderá enviar mensagens reais por Direct e respostas públicas nos comentários, conforme a configuração. Confira os dados antes de confirmar."
+            : pausing
+              ? "Confirme a pausa desta automação."
+              : "As alterações serão aplicadas à automação. Se ela estiver ativa, poderá enviar mensagens reais por Direct com o novo conteúdo.",
+        )}
+      </p>
+      {request.action !== "toggle" && (
+        <div className="mt-3 space-y-2 rounded-xl border border-border bg-background p-3">
+          <p>
+            {t("Palavras:")} {request.rule.keywords.join(", ")}
+          </p>
+          <p className="whitespace-pre-wrap">{request.rule.dm_response_template}</p>
+          {request.rule.comment_reply && (
+            <p className="whitespace-pre-wrap">
+              {t("Resposta pública:")} {request.rule.comment_reply}
+            </p>
+          )}
+        </div>
+      )}
+      <div className="mt-4 flex flex-wrap gap-3">
+        <Button type="button" disabled={busy} onClick={onConfirm}>
+          {t(
+            busy
+              ? "Salvando…"
+              : activating
+                ? "Confirmar e ativar"
+                : pausing
+                  ? "Confirmar pausa"
+                  : "Confirmar alterações",
+          )}
+        </Button>
+        <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+          {t("Voltar à revisão")}
+        </Button>
+      </div>
+    </Notice>
+  );
+}
 async function api<T>(query = "", body?: unknown): Promise<T> {
   const response = await fetch(
     `/api/v1/growth/instagram${query}`,
@@ -35,7 +123,10 @@ async function api<T>(query = "", body?: unknown): Promise<T> {
   return result.data;
 }
 const field = "w-full rounded-xl border bg-background p-3";
-export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
+export function InstagramGrowthClient({ orgId }: { orgId: string }) {
+  return <InstagramGrowthForOrganization key={orgId} />;
+}
+function InstagramGrowthForOrganization() {
   const t = useT();
   const idioma = useTagDeIdioma();
   const [state, setState] = useState<State>();
@@ -43,6 +134,7 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
   const logsRef = useRef<HTMLElement>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [editing, setEditing] = useState<InstagramAutomation | "new" | null>(null);
   const [requestId, setRequestId] = useState("");
   const [account, setAccount] = useState("");
@@ -71,7 +163,7 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
   useEffect(() => {
     if (!account || !editing) return;
     let active = true;
-    void api<{ posts: InstagramPost[] }>(`?account_id=${account}`)
+    void api<{ posts: InstagramPost[] }>(`?account_id=${encodeURIComponent(account)}`)
       .then((r) => {
         if (active) setPosts(r.posts);
       })
@@ -94,6 +186,7 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
     }
   }
   function edit(rule: InstagramAutomation | "new") {
+    setConfirmation(null);
     setEditing(rule);
     setRequestId(randomId());
     setError("");
@@ -105,6 +198,16 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
     setMode(r?.matchMode ?? "word");
     setMessage(r?.dmMessage ?? "");
     setReply(r?.commentReply ?? "");
+  }
+  async function confirmMutation() {
+    if (!confirmation) return;
+    const request = confirmation.request;
+    await run(async () => {
+      await api("", { ...request, confirmed: true });
+      setConfirmation(null);
+      if (request.action !== "toggle") setEditing(null);
+      await load();
+    });
   }
   return (
     <section className="mx-auto w-full max-w-5xl space-y-7 p-5 sm:p-8">
@@ -125,9 +228,12 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
           {error}
         </p>
       )}
+      {state?.message && <Notice>{state.message}</Notice>}
       <div className="flex flex-wrap gap-3">
         <Button
-          disabled={!state?.can_edit || busy || !state.accounts.some((a) => a.active)}
+          disabled={
+            !state?.can_edit || busy || !!confirmation || !state.accounts.some((a) => a.active)
+          }
           onClick={() => edit("new")}
         >
           {t("Nova automação")}
@@ -194,16 +300,20 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
               </Button>
               {state.can_edit && (
                 <>
-                  <Button variant="outline" disabled={busy} onClick={() => edit(rule)}>
+                  <Button
+                    variant="outline"
+                    disabled={busy || !!confirmation}
+                    onClick={() => edit(rule)}
+                  >
                     {t("Editar")}
                   </Button>
                   <Button
                     variant="outline"
-                    disabled={busy}
+                    disabled={busy || !!confirmation}
                     onClick={() =>
-                      void run(async () => {
-                        await api("", { action: "toggle", id: rule.id, is_active: !rule.isActive });
-                        await load();
+                      setConfirmation({
+                        name: rule.name,
+                        request: { action: "toggle", id: rule.id, is_active: !rule.isActive },
                       })
                     }
                   >
@@ -212,6 +322,14 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
                 </>
               )}
             </div>
+            {confirmation?.request.action === "toggle" && confirmation.request.id === rule.id && (
+              <ConfirmAutomation
+                confirmation={confirmation}
+                busy={busy}
+                onConfirm={() => void confirmMutation()}
+                onCancel={() => setConfirmation(null)}
+              />
+            )}
           </article>
         ))}
       </div>
@@ -264,8 +382,9 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              void run(async () => {
-                await api("", {
+              setConfirmation({
+                name,
+                request: {
                   action: editing === "new" ? "create" : "edit",
                   id: editing === "new" ? requestId : editing.id,
                   rule: {
@@ -280,128 +399,136 @@ export function InstagramGrowthClient({ orgId: _orgId }: { orgId: string }) {
                     dm_response_template: message,
                     comment_reply: reply,
                   },
-                });
-                setEditing(null);
-                await load();
+                },
               });
             }}
           >
-            <label className="block space-y-2">
-              <span>{t("Nome da automação")}</span>
-              <Input
-                required
-                maxLength={120}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
-            <label className="block space-y-2">
-              <span>{t("Conta do Instagram")}</span>
-              <select
-                className={field}
-                value={account}
-                disabled={editing !== "new"}
-                onChange={(e) => {
-                  setPosts([]);
-                  setAccount(e.target.value);
-                  setPost("");
-                }}
-              >
-                {state?.accounts
-                  .filter((a) => a.active)
-                  .map((a) => (
-                    <option value={a.id} key={a.id}>
-                      @{a.username}
+            <fieldset className="space-y-4" disabled={busy || !!confirmation}>
+              <label className="block space-y-2">
+                <span>{t("Nome da automação")}</span>
+                <Input
+                  required
+                  maxLength={120}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+              <label className="block space-y-2">
+                <span>{t("Conta do Instagram")}</span>
+                <select
+                  className={field}
+                  value={account}
+                  disabled={editing !== "new"}
+                  onChange={(e) => {
+                    setPosts([]);
+                    setAccount(e.target.value);
+                    setPost("");
+                  }}
+                >
+                  {state?.accounts
+                    .filter((a) => a.active)
+                    .map((a) => (
+                      <option value={a.id} key={a.id}>
+                        @{a.username}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="block space-y-2">
+                <span>{t("Postagem que receberá os comentários")}</span>
+                <select
+                  required
+                  className={field}
+                  disabled={editing !== "new"}
+                  value={post}
+                  onChange={(e) => setPost(e.target.value)}
+                >
+                  <option value="">
+                    {editing === "new" ? t("Escolha uma postagem") : t("Todas as postagens")}
+                  </option>
+                  {post && !posts.some((p) => p.id === post) && (
+                    <option value={post}>
+                      {t("Postagem")} {post}
+                    </option>
+                  )}
+                  {posts.map((p) => (
+                    <option value={p.id} key={p.id}>
+                      {p.message.slice(0, 110) || p.id}
                     </option>
                   ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span>{t("Postagem que receberá os comentários")}</span>
-              <select
-                required
-                className={field}
-                disabled={editing !== "new"}
-                value={post}
-                onChange={(e) => setPost(e.target.value)}
-              >
-                <option value="">
-                  {editing === "new" ? t("Escolha uma postagem") : t("Todas as postagens")}
-                </option>
-                {post && !posts.some((p) => p.id === post) && (
-                  <option value={post}>
-                    {t("Postagem")} {post}
-                  </option>
+                </select>
+              </label>
+              <label className="block space-y-2">
+                <span>{t("Palavras-chave, separadas por vírgula")}</span>
+                <Input
+                  required
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                  placeholder={t("QUERO, PREÇO")}
+                />
+              </label>
+              <label className="block space-y-2">
+                <span>{t("Quando responder")}</span>
+                <select className={field} value={mode} onChange={(e) => setMode(e.target.value)}>
+                  <option value="word">{t("A palavra aparece no comentário")}</option>
+                  <option value="contains">{t("O comentário contém o texto")}</option>
+                  <option value="exact">{t("O comentário é exatamente o texto")}</option>
+                </select>
+              </label>
+              <label className="block space-y-2">
+                <span id="instagram-dm-label">{t("Mensagem no Direct")}</span>
+                <Textarea
+                  aria-labelledby="instagram-dm-label"
+                  required
+                  maxLength={640}
+                  rows={5}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                />
+              </label>
+              <label className="block space-y-2">
+                <span id="instagram-reply-label">
+                  {t("Resposta pública após o Direct (opcional)")}
+                </span>
+                <Textarea
+                  aria-labelledby="instagram-reply-label"
+                  maxLength={1000}
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder={t("Te enviei os detalhes no Direct.")}
+                />
+              </label>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  "Ao salvar uma nova regra, ela fica ativa. O envio depende das permissões e limites do Instagram; acompanhe recusas em Ver resultados.",
                 )}
-                {posts.map((p) => (
-                  <option value={p.id} key={p.id}>
-                    {p.message.slice(0, 110) || p.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span>{t("Palavras-chave, separadas por vírgula")}</span>
-              <Input
-                required
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder={t("QUERO, PREÇO")}
+              </p>
+              <div className="flex gap-3">
+                <Button disabled={busy} type="submit">
+                  {busy
+                    ? t("Salvando…")
+                    : editing === "new"
+                      ? t("Revisar ativação")
+                      : t("Revisar alterações")}
+                </Button>
+                <Button
+                  disabled={busy}
+                  variant="outline"
+                  type="button"
+                  onClick={() => setEditing(null)}
+                >
+                  {t("Cancelar")}
+                </Button>
+              </div>
+            </fieldset>
+            {confirmation && confirmation.request.action !== "toggle" && (
+              <ConfirmAutomation
+                confirmation={confirmation}
+                busy={busy}
+                onConfirm={() => void confirmMutation()}
+                onCancel={() => setConfirmation(null)}
               />
-            </label>
-            <label className="block space-y-2">
-              <span>{t("Quando responder")}</span>
-              <select className={field} value={mode} onChange={(e) => setMode(e.target.value)}>
-                <option value="word">{t("A palavra aparece no comentário")}</option>
-                <option value="contains">{t("O comentário contém o texto")}</option>
-                <option value="exact">{t("O comentário é exatamente o texto")}</option>
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span id="instagram-dm-label">{t("Mensagem no Direct")}</span>
-              <Textarea
-                aria-labelledby="instagram-dm-label"
-                required
-                maxLength={640}
-                rows={5}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
-            </label>
-            <label className="block space-y-2">
-              <span id="instagram-reply-label">
-                {t("Resposta pública após o Direct (opcional)")}
-              </span>
-              <Textarea
-                aria-labelledby="instagram-reply-label"
-                maxLength={1000}
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                placeholder={t("Te enviei os detalhes no Direct.")}
-              />
-            </label>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "Ao salvar uma nova regra, ela fica ativa. O envio depende das permissões e limites do Instagram; acompanhe recusas em Ver resultados.",
-              )}
-            </p>
-            <div className="flex gap-3">
-              <Button disabled={busy} type="submit">
-                {busy
-                  ? t("Salvando…")
-                  : editing === "new"
-                    ? t("Salvar e ativar")
-                    : t("Salvar alterações")}
-              </Button>
-              <Button
-                disabled={busy}
-                variant="outline"
-                type="button"
-                onClick={() => setEditing(null)}
-              >
-                {t("Cancelar")}
-              </Button>
-            </div>
+            )}
           </form>
         </section>
       )}
