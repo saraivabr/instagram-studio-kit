@@ -18,8 +18,10 @@ import {
   claimJob,
   finishJob,
   recoverInterruptedJobs,
+  logoPathsInUse,
+  storedBrand,
 } from "./adapters/local/repository";
-import { localAssets, loadLogo } from "./adapters/local/assets";
+import { localAssets, loadLogo, pruneBrandLogos } from "./adapters/local/assets";
 import { mockAiRequest } from "./adapters/demo/ai";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { companyContext } from "@/lib/instagram/brand";
@@ -134,7 +136,12 @@ export async function queueInputs(
   const items = enqueue(
     context.tenantId,
     inputs,
-    { name: context.brand.name, accent: context.brand.accent, logoPath: context.brand.logoPath },
+    {
+      name: context.brand.name,
+      accent: context.brand.accent,
+      logoPath: context.brand.logoPath,
+      logoMode: context.brand.logoMode,
+    },
     replaceId,
   );
   startWorker();
@@ -210,6 +217,12 @@ async function runWorker() {
       });
       finishJob(job.id, false);
     }
+    // A replaced logo can go away once the last job that referenced it is done.
+    const current = storedBrand(job.tenant)?.logo_path;
+    await pruneBrandLogos(
+      job.tenant,
+      new Set([...logoPathsInUse(job.tenant), ...(current ? [current] : [])]),
+    );
     backoff.success();
   } catch (error) {
     const retry = backoff.failure(error);

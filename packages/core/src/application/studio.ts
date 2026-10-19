@@ -11,7 +11,11 @@ export interface AssetStore {
     tenantId: string,
     id: string,
     bytes: Uint8Array,
-    options?: { format?: "feed" | "square" | "story" },
+    options?: {
+      format?: "feed" | "square" | "story";
+      /** Original logo to apply on top of the finished art (company.logoMode === "stamp"). */
+      logo?: Logo;
+    },
   ): Promise<string>;
 }
 export interface StudioListQuery {
@@ -78,6 +82,7 @@ export function createStudio(deps: {
       );
       const asset_path = await deps.assets.save(tenantId, input.id, bytes, {
         format: input.format,
+        ...(input.use_logo && logo && company?.logoMode === "stamp" ? { logo } : {}),
       });
       return await deps.repository.complete(tenantId, input.id, {
         caption,

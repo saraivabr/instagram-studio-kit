@@ -223,3 +223,44 @@ test("transport uses fixed origin, blocks redirects and exposes no provider body
   assert.equal(observed.url, "https://api.openai.com/v1/responses");
   await assert.rejects(transport("../evil", {}));
 });
+
+test("stamp mode hands the original logo to the asset store, AI mode does not", async () => {
+  const logo = { bytes: new Uint8Array(Buffer.from(png, "base64")), type: "image/png" };
+  const options = [];
+  const make = () => {
+    const h = harness();
+    h.studio = createStudio({
+      ai: createAi(
+        async (path) =>
+          path.startsWith("images/")
+            ? { data: [{ b64_json: png }] }
+            : {
+                output: [{ type: "message", content: [{ type: "output_text", text: "Legenda" }] }],
+              },
+        { image: "image-test", text: "text-test" },
+      ),
+      repository: h.repository,
+      assets: {
+        async save(org, id, _bytes, opts) {
+          options.push(opts);
+          return `${org}/${id}`;
+        },
+      },
+    });
+    return h;
+  };
+  for (const logoMode of ["stamp", "ai"]) {
+    const h = make();
+    await h.studio.create("a", { ...input(), use_logo: true }, { name: "Ghost", logoMode }, logo);
+  }
+  const noLogo = make();
+  await noLogo.studio.create(
+    "a",
+    { ...input(), use_logo: false },
+    { name: "Ghost", logoMode: "stamp" },
+    logo,
+  );
+  assert.equal(options[0].logo, logo);
+  assert.equal(options[1].logo, undefined);
+  assert.equal(options[2].logo, undefined);
+});

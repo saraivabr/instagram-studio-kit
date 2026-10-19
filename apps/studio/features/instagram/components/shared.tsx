@@ -233,6 +233,7 @@ const sections = [
   { href: "/app/instagram/growth", label: "Automações (Growth)" },
   { href: "/app/instagram/inspirations", label: "Inspirações" },
   { href: "/app/instagram/insights", label: "Meus resultados" },
+  { href: "/app/settings/marca", label: "Minha marca" },
 ];
 function InstagramAccountButton() {
   const t = useT();

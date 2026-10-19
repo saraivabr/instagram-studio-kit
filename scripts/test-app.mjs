@@ -91,6 +91,7 @@ try {
   if (!process.exitCode)
     process.exitCode = await runTests(["--test", "tests/app-observability.mjs"]);
   if (!process.exitCode) process.exitCode = await runTests(["--test", "tests/app-social.mjs"]);
+  if (!process.exitCode) process.exitCode = await runTests(["--test", "tests/app-brand.mjs"]);
 } catch (error) {
   console.error(error.message);
   console.error(logs);

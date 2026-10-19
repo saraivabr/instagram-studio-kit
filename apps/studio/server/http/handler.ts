@@ -23,6 +23,14 @@ import {
 } from "@/server/runtime";
 import { HttpError } from "../errors";
 import { logFailure } from "../diagnostics.mjs";
+import { companyContext } from "@/lib/instagram/brand";
+import {
+  saveBrand,
+  replaceBrandLogo,
+  logoPathsInUse,
+  storedBrand,
+} from "@/server/adapters/local/repository";
+import { saveBrandLogo, pruneBrandLogos, readBrandLogo } from "@/server/adapters/local/assets";
 import {
   socialConfiguration,
   connections,
@@ -56,6 +64,55 @@ const carouselSchema = z
     format: z.literal("feed").default("feed"),
   })
   .strict();
+const brandSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    description: z.string().trim().min(2).max(2000),
+    accent: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, "Use uma cor no formato #RRGGBB.")
+      .transform((value) => value.toLowerCase()),
+    logo_mode: z.enum(["ai", "stamp"]).optional(),
+  })
+  .strict();
+const logoLimit = 5_000_000;
+/** Read a multipart logo upload under its own 5 MB limit (the JSON limit is 20 KB). */
+async function readLogoUpload(req: NextRequest) {
+  const type = req.headers.get("content-type") ?? "";
+  if (!/^multipart\/form-data;/i.test(type))
+    throw new HttpError(400, "multipart_required", "Envie o logo como arquivo (multipart).");
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  const cap = logoLimit + 100_000;
+  if (declared > cap) throw new HttpError(413, "logo_too_large", "O logo deve ter até 5 MB.");
+  const reader = req.body?.getReader();
+  if (!reader) throw new HttpError(400, "body_required", "Envie um arquivo de logo.");
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.length;
+    if (length > cap) {
+      await reader.cancel();
+      throw new HttpError(413, "logo_too_large", "O logo deve ter até 5 MB.");
+    }
+    chunks.push(value);
+  }
+  let form: FormData;
+  try {
+    form = await new Response(Buffer.concat(chunks), {
+      headers: { "content-type": type },
+    }).formData();
+  } catch {
+    throw new HttpError(400, "invalid_upload", "Upload inválido.");
+  }
+  const file = form.get("logo") ?? form.get("file");
+  if (!(file instanceof File) || !file.size)
+    throw new HttpError(400, "logo_required", "Escolha um arquivo de logo.");
+  if (file.size > logoLimit)
+    throw new HttpError(413, "logo_too_large", "O logo deve ter até 5 MB.");
+  return new Uint8Array(await file.arrayBuffer());
+}
 async function readJson(req: NextRequest) {
   const reader = req.body?.getReader();
   if (!reader) throw new HttpError(400, "body_required", "Body JSON obrigatório.");
@@ -134,6 +191,64 @@ export async function handleStudioRequest(req: NextRequest) {
           "X-Request-ID": requestId,
         },
       });
+    }
+    if (path === "/api/v1/brand" || path === "/api/v1/brand/logo") {
+      const view = async () => {
+        const brand = await companyContext(tenant);
+        const stored = storedBrand(tenant);
+        return {
+          registered: !!stored?.name?.trim(),
+          name: brand.name,
+          description: stored?.description?.trim() ? brand.description : "",
+          accent: brand.accent,
+          logo_url: brand.logoUrl,
+          logo_mode: brand.logoMode,
+          can_edit: [`admin`, `owner`, `editor`].includes(context.role),
+        };
+      };
+      const cleanup = async () =>
+        pruneBrandLogos(
+          tenant,
+          new Set([
+            ...logoPathsInUse(tenant),
+            ...(storedBrand(tenant)?.logo_path ? [storedBrand(tenant)!.logo_path!] : []),
+          ]),
+        );
+      if (path === "/api/v1/brand") {
+        allow("GET", "PUT");
+        if (req.method === "GET") return respond(await view());
+        ensureWrite();
+        const input = brandSchema.parse(await readJson(req));
+        saveBrand(tenant, {
+          name: input.name,
+          description: input.description,
+          accent: input.accent,
+          logo_mode: input.logo_mode ?? storedBrand(tenant)?.logo_mode ?? "stamp",
+        });
+        return respond(await view());
+      }
+      allow("GET", "POST", "DELETE");
+      if (req.method === "GET") {
+        const logo = storedBrand(tenant)?.logo_path;
+        if (!logo) throw new HttpError(404, "logo_not_found", "Logo não encontrado.");
+        const file = await readBrandLogo(tenant, logo);
+        return new NextResponse(new Uint8Array(file.bytes), {
+          headers: {
+            "Content-Type": file.type,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Request-ID": requestId,
+          },
+        });
+      }
+      ensureWrite();
+      if (req.method === "POST") {
+        const name = await saveBrandLogo(tenant, await readLogoUpload(req));
+        replaceBrandLogo(tenant, name);
+      } else replaceBrandLogo(tenant, null);
+      // Jobs already queued keep their own logo file until they finish.
+      await cleanup();
+      return respond(await view());
     }
     if (path === "/api/v1/instagram/config") {
       allow("GET");

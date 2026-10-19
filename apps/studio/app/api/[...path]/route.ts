@@ -5,6 +5,7 @@ export const maxDuration = 300;
 export {
   handleStudioRequest as GET,
   handleStudioRequest as POST,
+  handleStudioRequest as PUT,
   handleStudioRequest as PATCH,
   handleStudioRequest as DELETE,
 };

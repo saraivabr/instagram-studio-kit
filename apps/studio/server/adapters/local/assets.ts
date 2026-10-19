@@ -1,5 +1,5 @@
 import "server-only";
-import { readFile, mkdir, open, rename, unlink } from "node:fs/promises";
+import { readFile, readdir, mkdir, open, rename, unlink } from "node:fs/promises";
 import { join, resolve, relative, isAbsolute, sep } from "node:path";
 import sharp from "sharp";
 import { formats, studioId, type AssetStore, type Logo } from "@saraivabr/instagram-studio-kit";
@@ -21,16 +21,49 @@ async function atomicFile(path: string, bytes: Uint8Array) {
     throw error;
   }
 }
+/**
+ * Apply the original logo in the bottom-right corner, inside the 8% safe area the prompt reserves.
+ * The file is only scaled; its letters and colors are never redrawn by the AI.
+ */
+export async function stampLogo(art: Buffer, logo: Logo, width: number, height: number) {
+  const marginX = Math.round(width * 0.08);
+  const marginY = Math.round(height * 0.08);
+  const padding = Math.max(8, Math.round(width * 0.012));
+  const mark = await sharp(Buffer.from(logo.bytes), { limitInputPixels: 40_000_000 })
+    .resize({
+      width: Math.round(width * 0.24),
+      height: Math.round(height * 0.1),
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .png()
+    .toBuffer({ resolveWithObject: true });
+  const plateWidth = mark.info.width + padding * 2;
+  const plateHeight = mark.info.height + padding * 2;
+  const left = Math.max(0, width - marginX - plateWidth);
+  const top = Math.max(0, height - marginY - plateHeight);
+  const plate = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${plateWidth}" height="${plateHeight}"><rect width="100%" height="100%" rx="${padding}" fill="#ffffff" fill-opacity="0.92"/></svg>`,
+  );
+  return sharp(art)
+    .composite([
+      { input: plate, left, top },
+      { input: mark.data, left: left + padding, top: top + padding },
+    ])
+    .png()
+    .toBuffer();
+}
 export const localAssets: AssetStore = {
   async save(tenant, rawId, bytes, options) {
     const id = studioId.parse(rawId);
     const directory = tenantDirectory(tenant);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const [width, height] = formats[options?.format ?? "square"].size.split("x").map(Number);
-    const rendered = await sharp(bytes, { limitInputPixels: 40_000_000 })
+    let rendered = await sharp(bytes, { limitInputPixels: 40_000_000 })
       .resize(width, height, { fit: "cover", position: "centre" })
       .png()
       .toBuffer();
+    if (options?.logo) rendered = await stampLogo(rendered, options.logo, width!, height!);
     await atomicFile(join(/* turbopackIgnore: true */ directory, `${id}.png`), rendered);
     await atomicFile(
       join(directory, `${id}.webp`),
@@ -86,7 +119,18 @@ export async function loadLogo(tenant: string, path?: string | null): Promise<Lo
   const localPath = relative(directory, fullPath);
   if (!localPath || localPath === ".." || localPath.startsWith(".." + sep) || isAbsolute(localPath))
     throw new HttpError(400, "invalid_logo", "Caminho de logo inválido.");
-  const bytes = await readFile(fullPath);
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(fullPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new HttpError(
+        400,
+        "invalid_logo",
+        "O logo cadastrado não foi encontrado. Envie-o novamente em Minha marca.",
+      );
+    throw error;
+  }
   const signature = bytes.subarray(0, 8).toString("hex");
   const type =
     signature === "89504e470d0a1a0a"
@@ -97,4 +141,68 @@ export async function loadLogo(tenant: string, path?: string | null): Promise<Lo
   if (!type || bytes.length > 5_000_000)
     throw new HttpError(400, "invalid_logo", "Logo deve ser PNG/JPG de até 5 MB.");
   return { bytes: new Uint8Array(bytes), type };
+}
+const logoFile = /^brand-logo-[a-f0-9-]{36}\.(png|jpg)$/;
+/** Validate (PNG/JPG, 5 MB), normalize and store a private logo; returns its relative file name. */
+export async function saveBrandLogo(tenant: string, bytes: Uint8Array) {
+  if (!bytes.length || bytes.length > 5_000_000)
+    throw new HttpError(400, "invalid_logo", "Logo deve ser PNG ou JPG de até 5 MB.");
+  const signature = Buffer.from(bytes.subarray(0, 8)).toString("hex");
+  const png = signature === "89504e470d0a1a0a";
+  const jpeg = signature.startsWith("ffd8ff");
+  if (!png && !jpeg)
+    throw new HttpError(
+      400,
+      "invalid_logo",
+      "Formato não aceito. Envie o logo em PNG ou JPG; SVG, PDF e WebP não são aceitos.",
+    );
+  let normalized: Buffer;
+  try {
+    // sharp drops metadata by default; only the largest side is limited and alpha is kept.
+    const pipeline = sharp(Buffer.from(bytes), { limitInputPixels: 40_000_000 }).resize({
+      width: 1024,
+      height: 1024,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+    normalized = await (png ? pipeline.png() : pipeline.jpeg({ quality: 92 })).toBuffer();
+  } catch {
+    throw new HttpError(
+      400,
+      "invalid_logo",
+      "Não foi possível ler essa imagem. Ela pode estar corrompida.",
+    );
+  }
+  const directory = tenantDirectory(tenant);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const name = `brand-logo-${crypto.randomUUID()}.${png ? "png" : "jpg"}`;
+  await atomicFile(join(/* turbopackIgnore: true */ directory, name), normalized);
+  return name;
+}
+/** Remove logo files no current brand or queued job needs. Never touches generated art. */
+export async function pruneBrandLogos(tenant: string, keep: Set<string>) {
+  if (keep.has("*")) return;
+  const directory = tenantDirectory(tenant);
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    names
+      .filter((name) => logoFile.test(name) && !keep.has(name))
+      .map((name) => unlink(join(/* turbopackIgnore: true */ directory, name)).catch(() => {})),
+  );
+}
+export async function readBrandLogo(tenant: string, path: string) {
+  if (!logoFile.test(path)) throw new HttpError(404, "logo_not_found", "Logo não encontrado.");
+  try {
+    const bytes = await readFile(join(/* turbopackIgnore: true */ tenantDirectory(tenant), path));
+    return { bytes, type: path.endsWith(".png") ? "image/png" : "image/jpeg" };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new HttpError(404, "logo_not_found", "Logo não encontrado.");
+    throw error;
+  }
 }

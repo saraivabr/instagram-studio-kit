@@ -15,7 +15,7 @@
 
 UUIDs são normalizados para lowercase. O mesmo UUID devolve a intenção já existente mesmo se um payload posterior mudar. Não repita uma chamada paga automaticamente após falha ambígua. `examples/memory.mjs` ilustra o contrato, mas perde dados no restart e não atende produção distribuída.
 
-Logo vem do storage da organização autenticada. `createStudio` valida assinatura PNG/JPEG e limite de 5 MB; a associação à organização é responsabilidade do anfitrião. Funções de baixo nível de `createAi` recebem entradas previamente validadas. Textos, páginas pesquisadas e dados da marca são conteúdo, não instruções privilegiadas.
+Logo vem do storage da organização autenticada. O aplicativo oferece dois modos (`CompanyContext.logoMode`): `"ai"` envia o logo como imagem de referência (`images/edits`, com `input_fidelity: "high"` em `gpt-image-1` e `gpt-image-1.5`), e `"stamp"` gera a arte sem logo e entrega o arquivo original a `AssetStore.save` em `options.logo`, para o adapter aplicá-lo no canto inferior direito, dentro da área segura. O adapter do app faz isso com Sharp e é o modo padrão, pois o logo sai idêntico e não depende do provedor de imagem. Sem `logoMode`, o SDK mantém o comportamento anterior (`"ai"`). `createStudio` valida assinatura PNG/JPEG e limite de 5 MB; a associação à organização é responsabilidade do anfitrião. Funções de baixo nível de `createAi` recebem entradas previamente validadas. Textos, páginas pesquisadas e dados da marca são conteúdo, não instruções privilegiadas.
 
 ## Autenticação e marca no aplicativo
 
@@ -23,7 +23,7 @@ Logo vem do storage da organização autenticada. `createStudio` valida assinatu
 
 Os adapters em `lib/auth/server.ts` retornam identidade local fixa; substitua-os pelo login e seleção de organização do seu produto, junto com `hooks/auth/AuthProvider.tsx`. A proteção de Host/Origin limita o exemplo a loopback. Ao hospedar, adapte também a política de origens e os cookies de sessão. Não há login de produção nem OAuth da Meta implementados.
 
-`lib/instagram/brand.ts` é consultado tanto pelas páginas quanto pelo backend. A implementação de exemplo salva a descrição usada nas criações por organização; nome e cor ainda são exemplos. Para usar logo, retorne `logoPath` privado dentro do diretório de assets da organização. `loadLogo` valida o caminho e a imagem antes da geração. No seu storage, substitua esse loader e mantenha a verificação de propriedade do arquivo.
+`lib/instagram/brand.ts` é consultado tanto pelas páginas quanto pelo backend. A implementação de exemplo lê da tabela `brands` o nome, a atividade, a cor e o logo cadastrados em **Minha marca** (`/app/settings/marca`); sem cadastro valem os padrões (`Sua empresa`, `#506d48`, sem logo). A API é `GET/PUT /api/v1/brand` e `GET/POST/DELETE /api/v1/brand/logo`; só `admin`, `owner` e `editor` escrevem, e o logo só é servido a usuários autenticados da própria organização. O envio é multipart (campo `logo`, PNG ou JPG até 5 MB), normalizado com Sharp e salvo como `brand-logo-<uuid>` no diretório privado da organização; o job guarda o caminho ao entrar na fila e o arquivo antigo só é removido quando nenhum job ativo o usa. No seu storage, retorne `logoPath` privado dentro do diretório de assets da organização. `loadLogo` valida o caminho e a imagem antes da geração. No seu storage, substitua esse loader e mantenha a verificação de propriedade do arquivo.
 
 ## HTTP e fila de geração
 

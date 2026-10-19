@@ -926,3 +926,45 @@ test("publication timeout stays uncertain to the caller and never retries the PO
   );
   assert.equal(calls, 1);
 });
+
+test("logo reference uses high input fidelity only on models that support it", async () => {
+  const logo = { bytes: new Uint8Array(Buffer.from(png, "base64")), type: "image/png" };
+  const seen = {};
+  for (const model of ["gpt-image-1", "gpt-image-1.5", "gpt-image-1-mini", "gpt-image-2"]) {
+    const ai = createAi(
+      async (path, body, multipart) => {
+        seen[model] = { path, body, field: multipart?.get("input_fidelity") ?? null };
+        return { data: [{ b64_json: png }] };
+      },
+      { image: model, text: "text-test" },
+    );
+    await ai.createImage("org", postInput("square"), { name: "Ghost", logoMode: "ai" }, logo);
+  }
+  for (const model of ["gpt-image-1", "gpt-image-1.5"]) {
+    assert.equal(seen[model].path, "images/edits");
+    assert.equal(seen[model].body.input_fidelity, "high");
+    assert.equal(seen[model].field, "high");
+  }
+  for (const model of ["gpt-image-1-mini", "gpt-image-2"]) {
+    assert.equal(seen[model].path, "images/edits");
+    assert.equal(seen[model].field, null);
+  }
+});
+
+test("stamp mode never sends the logo to the model and reserves the corner", async () => {
+  const logo = { bytes: new Uint8Array(Buffer.from(png, "base64")), type: "image/png" };
+  const calls = [];
+  const ai = createAi(
+    async (path, body, multipart) => {
+      calls.push({ path, body, multipart });
+      return { data: [{ b64_json: png }] };
+    },
+    { image: "gpt-image-1", text: "text-test" },
+  );
+  await ai.createImage("org", postInput("feed"), { name: "Ghost", logoMode: "stamp" }, logo);
+  assert.equal(calls[0].path, "images/generations");
+  assert.equal(calls[0].multipart, undefined);
+  assert.equal(calls[0].body.input_fidelity, undefined);
+  assert.match(calls[0].body.prompt, /Não desenhe nenhum logo/);
+  assert.match(calls[0].body.prompt, /canto inferior direito/);
+});

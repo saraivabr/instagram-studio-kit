@@ -121,6 +121,9 @@ export function CreatePost({
               <div>
                 <p className="text-sm text-muted-foreground">{t("Criando para")}</p>
                 <h2 className="text-xl font-medium">{company.name}</h2>
+                <a href="/app/settings/marca" className="text-sm underline underline-offset-4">
+                  {t("Editar marca")}
+                </a>
               </div>
             </div>
             {niche && <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">{niche}</p>}

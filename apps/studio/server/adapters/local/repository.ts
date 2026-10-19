@@ -14,7 +14,12 @@ import { dataDirectory } from "./paths";
 import { HttpError } from "../../errors";
 import { errorDiagnostic } from "../../diagnostics.mjs";
 type Row = { value: string };
-export type JobContext = { name: string; accent?: string | null; logoPath?: string | null };
+export type JobContext = {
+  name: string;
+  accent?: string | null;
+  logoPath?: string | null;
+  logoMode?: "ai" | "stamp";
+};
 export type Job = { id: string; tenant: string; item_id: string; context: JobContext };
 const state = globalThis as typeof globalThis & { studioDb?: DatabaseSync };
 function transaction<T>(db: DatabaseSync, run: () => T): T {
@@ -68,6 +73,18 @@ export function database() {
       )
     )
       db.exec("ALTER TABLE jobs ADD COLUMN cost REAL NOT NULL DEFAULT 0");
+    const brandColumns = (db.prepare("PRAGMA table_info(brands)").all() as { name: string }[]).map(
+      (column) => column.name,
+    );
+    for (const [column, definition] of [
+      ["name", "TEXT"],
+      ["accent", "TEXT"],
+      ["logo_path", "TEXT"],
+      ["logo_mode", "TEXT NOT NULL DEFAULT 'stamp'"],
+      ["updated_at", "TEXT"],
+    ] as const)
+      if (!brandColumns.includes(column))
+        db.exec(`ALTER TABLE brands ADD COLUMN ${column} ${definition}`);
     if (!db.prepare("SELECT value FROM metadata WHERE key='json_migrated'").get()) {
       phase = "migração de items.json";
       const path = join(dataDirectory, "items.json");
@@ -432,7 +449,71 @@ export function finishJob(id: string, success: boolean) {
 }
 export function storedDescription(tenant: string): string | undefined {
   return (
-    database().prepare("SELECT description FROM brands WHERE tenant=?").get(tenant) as
-      { description: string } | undefined
-  )?.description;
+    (
+      database().prepare("SELECT description FROM brands WHERE tenant=?").get(tenant) as
+        { description: string } | undefined
+    )?.description?.trim() || undefined
+  );
+}
+export type BrandRow = {
+  name: string | null;
+  description: string;
+  accent: string | null;
+  logo_path: string | null;
+  logo_mode: "ai" | "stamp";
+  updated_at: string | null;
+};
+export function storedBrand(tenant: string): BrandRow | undefined {
+  return database()
+    .prepare(
+      "SELECT name,description,accent,logo_path,logo_mode,updated_at FROM brands WHERE tenant=?",
+    )
+    .get(tenant) as BrandRow | undefined;
+}
+export function saveBrand(
+  tenant: string,
+  brand: { name: string; description: string; accent: string; logo_mode: "ai" | "stamp" },
+) {
+  database()
+    .prepare(
+      `INSERT INTO brands(tenant,description,name,accent,logo_mode,updated_at) VALUES(?,?,?,?,?,?)
+       ON CONFLICT(tenant) DO UPDATE SET description=excluded.description,name=excluded.name,accent=excluded.accent,logo_mode=excluded.logo_mode,updated_at=excluded.updated_at`,
+    )
+    .run(
+      tenant,
+      brand.description,
+      brand.name,
+      brand.accent,
+      brand.logo_mode,
+      new Date().toISOString(),
+    );
+}
+/** Point the brand at a new logo file (or none) and return the previous relative path. */
+export function replaceBrandLogo(tenant: string, path: string | null): string | null {
+  const db = database();
+  return transaction(db, () => {
+    const previous = storedBrand(tenant)?.logo_path ?? null;
+    db.prepare(
+      `INSERT INTO brands(tenant,description,logo_path,updated_at) VALUES(?,?,?,?)
+       ON CONFLICT(tenant) DO UPDATE SET logo_path=excluded.logo_path,updated_at=excluded.updated_at`,
+    ).run(tenant, "", path, new Date().toISOString());
+    return previous;
+  });
+}
+/** Logo files that queued or running jobs of this tenant still need. */
+export function logoPathsInUse(tenant: string): Set<string> {
+  const rows = database()
+    .prepare("SELECT context FROM jobs WHERE tenant=? AND state IN ('queued','running')")
+    .all(tenant) as { context: string }[];
+  const used = new Set<string>();
+  for (const row of rows) {
+    try {
+      const path = (JSON.parse(row.context) as JobContext).logoPath;
+      if (path) used.add(path);
+    } catch {
+      // A corrupt context is reported by claimJob; keep every file in that case.
+      used.add("*");
+    }
+  }
+  return used;
 }

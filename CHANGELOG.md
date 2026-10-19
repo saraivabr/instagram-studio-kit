@@ -1,5 +1,16 @@
 # Mudanças
 
+## 0.4.0 · 19/10/2026
+
+- Tela **Minha marca** (`/app/settings/marca`, com link no menu e atalho "Editar marca" na criação): nome (até 100), atividade (até 2000), cor principal com seletor e hex, logo PNG/JPG de até 5 MB com prévia em fundo claro e escuro, trocar e remover.
+- API `GET/PUT /api/v1/brand` e `GET/POST/DELETE /api/v1/brand/logo` (upload multipart com limite próprio de 5 MB). Só `admin`, `owner` e `editor` alteram; os demais só veem. O logo é privado por organização e servido por rota autenticada.
+- Tabela `brands` ampliada (`name`, `accent`, `logo_path`, `logo_mode`, `updated_at`) por migração automática; `companyContext` lê tudo dela e mantém os valores padrão quando não há cadastro.
+- Logo validado por assinatura (SVG, PDF e WebP recusados com mensagem clara), normalizado com sharp (sem metadados, maior lado até 1024 px, transparência preservada) e gravado com arquivo temporário + rename, com nome novo a cada envio.
+- Trocar ou remover o logo não quebra gerações na fila: o arquivo antigo só é apagado quando nenhum job o usa.
+- Dois modos de aplicar o logo: **arquivo original no canto** (padrão; a IA gera a arte sem logo e o servidor aplica o arquivo dentro da área segura de 8%) ou **IA desenha o logo**, que envia a referência com `input_fidelity: "high"` nos modelos que suportam (`gpt-image-1` e `gpt-image-1.5`). Vale também para os 8 slides do carrossel.
+- SDK: `CompanyContext.logoMode` (`"ai"` ou `"stamp"`) e `AssetStore.save(..., { logo })`; adapters antigos continuam compatíveis.
+- Fora desta versão: fotos de pessoas nas artes (parte opcional do pedido), que exige consentimento, privacidade e múltiplas imagens de referência.
+
 ## 0.3.0 · 14/10/2026
 
 - Patch de segurança do Next.js 16.3.8 para atender a auditoria de dependências.
