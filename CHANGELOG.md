@@ -9,6 +9,7 @@ Parte opcional do pedido "Minha marca": rosto de uma pessoa nas artes.
 - API `GET/POST /api/v1/brand/people`, `DELETE /api/v1/brand/people/<id>` e prévia autenticada em `/api/v1/brand/people/<id>/photos/<n>`. Só `admin`, `owner` e `editor` alteram; até 10 pessoas por organização.
 - Privacidade: fotos privadas por organização, sem EXIF/GPS, limitadas a 1024 px, enviadas só ao provedor de imagem. Autorização registrada com data e usuário. Remover a pessoa apaga as fotos na hora; gerações ainda na fila falham sem chamar a IA em vez de usar a imagem.
 - SDK: `BrandPerson`, `maxPersonPhotos` e quinto argumento `person` em `create`/`generateClaimed`/`createImage`. As fotos vão antes do logo em `image[]` (a primeira referência é a mais preservada), com `input_fidelity: "high"` em `gpt-image-1` e `gpt-image-1.5`. Pessoa ausente ou com fotos inválidas é recusada antes de qualquer chamada paga. Adapters e chamadas antigas continuam compatíveis.
+- Segurança: Next.js 16.4.3 (GHSA-2464-fhr4-w9xw, GHSA-p3m5-59mp-jv5r, GHSA-673q-mjm6-r5xr) e zod 4.6.7 (GHSA-mrhx-c7xc-m3w5), para a auditoria de dependências do CI voltar a passar.
 - Testes com IA simulada: validação e consentimento, remoção de metadados, ordem das referências, carrossel com pessoa, remoção com fila ativa e fluxo da tela no navegador. O rosto reconhecível na arte depende do provedor real e precisa ser conferido com créditos.
 
 ## 0.4.0 · 19/10/2026
