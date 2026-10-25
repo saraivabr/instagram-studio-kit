@@ -21,6 +21,7 @@ export default async function Page() {
         accent: brand.accent ?? "#506d48",
         logoUrl: brand.logoUrl,
         logoMode: brand.logoMode,
+        people: brand.people,
       }}
     />
   );

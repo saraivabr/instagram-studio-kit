@@ -264,3 +264,39 @@ test("stamp mode hands the original logo to the asset store, AI mode does not", 
   assert.equal(options[1].logo, undefined);
   assert.equal(options[2].logo, undefined);
 });
+
+test("a requested person must match, carry valid photos and reach the provider", async () => {
+  const face = { bytes: new Uint8Array(Buffer.from(png, "base64")), type: "image/png" };
+  const person = { id: randomUUID(), name: "Ana", photos: [face] };
+  const h = harness();
+  const withPerson = { ...input(), use_logo: false, person_id: person.id };
+  await assert.rejects(h.studio.create("a", withPerson), /Pessoa não encontrada/);
+  await assert.rejects(
+    h.studio.create("a", withPerson, undefined, undefined, { ...person, id: randomUUID() }),
+    /Pessoa não encontrada/,
+  );
+  await assert.rejects(
+    h.studio.create("a", withPerson, undefined, undefined, { ...person, photos: [] }),
+    /Fotos da pessoa inválidas/,
+  );
+  await assert.rejects(
+    h.studio.create("a", withPerson, undefined, undefined, {
+      ...person,
+      photos: [{ bytes: new Uint8Array([1, 2, 3]), type: "image/jpeg" }],
+    }),
+    /Fotos da pessoa inválidas/,
+  );
+  assert.equal(h.calls.length, 0, "nenhuma chamada paga com pessoa inválida");
+  const item = await h.studio.create("a", withPerson, undefined, undefined, person);
+  assert.equal(item.status, "ready");
+  const image = h.calls.find(([path]) => path.startsWith("images/"));
+  assert.equal(image[0], "images/edits");
+  assert.equal(image[2].getAll("image[]").length, 1);
+  const without = harness();
+  await without.studio.create("a", { ...input(), use_logo: false }, undefined, undefined, person);
+  assert.equal(
+    without.calls.find(([path]) => path.startsWith("images/"))[0],
+    "images/generations",
+    "pessoa só entra quando o pedido escolhe person_id",
+  );
+});

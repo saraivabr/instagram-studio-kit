@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StudioShell, Intro, Notice } from "@/features/instagram/components/shared";
+import type { BrandPersonView } from "@/lib/instagram/brand";
 type BrandView = {
   name: string;
   description: string;
@@ -34,6 +35,7 @@ export function BrandSettings({
     accent: string;
     logoUrl: string | null;
     logoMode: "ai" | "stamp";
+    people: BrandPersonView[];
   };
 }) {
   const t = useT();
@@ -253,6 +255,195 @@ export function BrandSettings({
           </Button>
         )}
       </form>
+      <BrandPeople canEdit={canEdit} initial={initial.people} />
     </StudioShell>
+  );
+}
+async function peopleApi(path: string, init?: RequestInit): Promise<BrandPersonView[]> {
+  const response = await fetch(`/api/v1/brand/people${path}`, init);
+  const json = await response.json().catch(() => null);
+  if (!response.ok)
+    throw new Error(json?.error?.message || "Não foi possível concluir. Tente novamente.");
+  return json.data.people;
+}
+/** People who authorized the use of their image. Photos are private and go only to the provider. */
+function BrandPeople({ canEdit, initial }: { canEdit: boolean; initial: BrandPersonView[] }) {
+  const t = useT();
+  const router = useRouter();
+  const photoInput = useRef<HTMLInputElement>(null);
+  const [people, setPeople] = useState(initial);
+  const [name, setName] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const disabled = busy || !canEdit;
+  async function run(action: () => Promise<string>) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      setNotice(await action());
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível concluir.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const choose = (files: FileList | null) => {
+    const list = Array.from(files ?? []);
+    setError("");
+    if (list.length > 3) return setError(t("Escolha no máximo 3 fotos."));
+    if (list.some((file) => !["image/png", "image/jpeg"].includes(file.type)))
+      return setError(t("Envie fotos em PNG ou JPG; HEIC, WebP, SVG e PDF não são aceitos."));
+    if (list.some((file) => file.size > 5_000_000))
+      return setError(t("Cada foto deve ter até 5 MB."));
+    setPhotos(list);
+  };
+  const add = (e: React.FormEvent) => {
+    e.preventDefault();
+    return run(async () => {
+      if (!consent) throw new Error(t("Confirme a autorização da pessoa antes de enviar."));
+      if (!photos.length) throw new Error(t("Escolha de 1 a 3 fotos de frente."));
+      const body = new FormData();
+      body.append("name", name);
+      body.append("consent", "true");
+      for (const photo of photos) body.append("photos", photo);
+      setPeople(await peopleApi("", { method: "POST", body }));
+      setName("");
+      setPhotos([]);
+      setConsent(false);
+      return t("Pessoa adicionada. Ela já pode ser incluída nas próximas artes.");
+    });
+  };
+  const remove = (person: BrandPersonView) =>
+    run(async () => {
+      setPeople(await peopleApi(`/${person.id}`, { method: "DELETE" }));
+      return t("Pessoa e fotos removidas.");
+    });
+  return (
+    <section aria-labelledby="brand-people" className="mt-12 max-w-2xl space-y-6">
+      <div className="space-y-2">
+        <h2 id="brand-people" className="text-2xl font-medium">
+          {t("Pessoas da marca")}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Cadastre quem pode aparecer nas artes, como você ou alguém da equipe. Na criação, escolha incluir a pessoa.",
+          )}
+        </p>
+        <Notice>
+          {t(
+            "O rosto é aproximado, não idêntico, e pode variar entre as artes. Nem todo provedor de imagem aceita fotos de referência. As fotos ficam privadas na sua organização, são enviadas só ao provedor de imagem e saem na hora quando você remove a pessoa.",
+          )}
+        </Notice>
+      </div>
+      {people.length ? (
+        <ul className="space-y-3">
+          {people.map((person) => (
+            <li
+              key={person.id}
+              className="flex flex-wrap items-center gap-4 rounded-2xl border border-border p-4"
+            >
+              <div className="flex gap-2">
+                {person.photo_urls.map((url, index) => (
+                  <Image
+                    key={url}
+                    unoptimized
+                    width={56}
+                    height={56}
+                    src={url}
+                    alt={`${t("Foto")} ${index + 1} ${t("de")} ${person.name}`}
+                    className="h-14 w-14 rounded-xl object-cover"
+                  />
+                ))}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{person.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t("Autorização confirmada em")}{" "}
+                  {new Date(person.consent_at).toLocaleDateString("pt-BR")}
+                </p>
+              </div>
+              {canEdit && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void remove(person)}
+                >
+                  {t("Remover")}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t("Nenhuma pessoa cadastrada ainda.")}</p>
+      )}
+      {canEdit && (
+        <form onSubmit={add} className="space-y-4 rounded-3xl border border-border bg-muted/30 p-5">
+          <div className="space-y-2">
+            <label htmlFor="person-name" className="block font-medium">
+              {t("Nome da pessoa")}
+            </label>
+            <Input
+              id="person-name"
+              required
+              maxLength={100}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={disabled}
+            />
+          </div>
+          <div className="space-y-2">
+            <input
+              ref={photoInput}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg"
+              aria-label={t("Fotos da pessoa")}
+              className="sr-only"
+              onChange={(e) => {
+                choose(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => photoInput.current?.click()}
+            >
+              {photos.length ? t("Trocar fotos") : t("Escolher fotos")}
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              {photos.length
+                ? `${photos.length} ${photos.length === 1 ? t("foto escolhida") : t("fotos escolhidas")}`
+                : t("De 1 a 3 fotos de frente, com boa luz. PNG ou JPG até 5 MB cada.")}
+            </p>
+          </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              required
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              disabled={disabled}
+              className="mt-1"
+            />
+            {t("Tenho autorização desta pessoa para usar a imagem dela.")}
+          </label>
+          {error && <Notice error>{error}</Notice>}
+          {notice && !error && <Notice>{notice}</Notice>}
+          <Button type="submit" disabled={busy || !consent || !photos.length}>
+            {busy ? t("Enviando…") : t("Adicionar pessoa")}
+          </Button>
+        </form>
+      )}
+      {!canEdit && error && <Notice error>{error}</Notice>}
+    </section>
   );
 }

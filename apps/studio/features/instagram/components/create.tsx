@@ -39,13 +39,21 @@ export function CreatePost({
   const [format, setFormat] = useState<keyof typeof formats>("feed");
   const [carouselTemplate, setCarouselTemplate] = useState<CarouselTemplateId | "">("");
   const [useLogo, setUseLogo] = useState(true);
+  const [personId, setPersonId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const fingerprint = JSON.stringify({ brief, niche, format, useLogo, carouselTemplate });
+    const fingerprint = JSON.stringify({
+      brief,
+      niche,
+      format,
+      useLogo,
+      personId,
+      carouselTemplate,
+    });
     if (pendingRequest.current?.fingerprint !== fingerprint)
       pendingRequest.current = {
         fingerprint,
@@ -65,6 +73,7 @@ export function CreatePost({
                 brief,
                 niche,
                 use_logo: useLogo,
+                ...(personId ? { person_id: personId } : {}),
                 format: "feed",
               }),
             })
@@ -78,6 +87,7 @@ export function CreatePost({
               niche,
               format,
               use_logo: useLogo,
+              ...(personId ? { person_id: personId } : {}),
               caption: "",
             }),
           });
@@ -168,6 +178,38 @@ export function CreatePost({
                 />
                 {t("Usar meu logo como referência")}
               </label>
+            )}
+            {company.people.length > 0 && (
+              <fieldset disabled={busy} className="mt-4 space-y-2">
+                <legend className="text-sm font-medium">{t("Pessoa na arte")}</legend>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="person"
+                    checked={!personId}
+                    onChange={() => setPersonId("")}
+                  />
+                  {t("Sem pessoa")}
+                </label>
+                {company.people.map((person) => (
+                  <label key={person.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="person"
+                      checked={personId === person.id}
+                      onChange={() => setPersonId(person.id)}
+                    />
+                    {t("Incluir")} {person.name} {t("na arte")}
+                  </label>
+                ))}
+                {personId && (
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      "O rosto é aproximado e pode variar entre as artes. Confira antes de publicar.",
+                    )}
+                  </p>
+                )}
+              </fieldset>
             )}
           </section>
           <div className="space-y-2">

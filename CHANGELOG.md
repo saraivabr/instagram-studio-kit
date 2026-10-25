@@ -1,5 +1,16 @@
 # Mudanças
 
+## 0.5.0 · 25/10/2026
+
+Parte opcional do pedido "Minha marca": rosto de uma pessoa nas artes.
+
+- Seção **Pessoas da marca** em `/app/settings/marca`: nome, de 1 a 3 fotos de frente (PNG/JPG até 5 MB cada) e a caixa obrigatória "Tenho autorização desta pessoa para usar a imagem dela". A tela avisa que o rosto é aproximado, pode variar entre as artes e que nem todo provedor aceita referências.
+- Na criação, a opção **Incluir [nome] na arte** para post único e para os 8 slides do carrossel (`person_id`).
+- API `GET/POST /api/v1/brand/people`, `DELETE /api/v1/brand/people/<id>` e prévia autenticada em `/api/v1/brand/people/<id>/photos/<n>`. Só `admin`, `owner` e `editor` alteram; até 10 pessoas por organização.
+- Privacidade: fotos privadas por organização, sem EXIF/GPS, limitadas a 1024 px, enviadas só ao provedor de imagem. Autorização registrada com data e usuário. Remover a pessoa apaga as fotos na hora; gerações ainda na fila falham sem chamar a IA em vez de usar a imagem.
+- SDK: `BrandPerson`, `maxPersonPhotos` e quinto argumento `person` em `create`/`generateClaimed`/`createImage`. As fotos vão antes do logo em `image[]` (a primeira referência é a mais preservada), com `input_fidelity: "high"` em `gpt-image-1` e `gpt-image-1.5`. Pessoa ausente ou com fotos inválidas é recusada antes de qualquer chamada paga. Adapters e chamadas antigas continuam compatíveis.
+- Testes com IA simulada: validação e consentimento, remoção de metadados, ordem das referências, carrossel com pessoa, remoção com fila ativa e fluxo da tela no navegador. O rosto reconhecível na arte depende do provedor real e precisa ser conferido com créditos.
+
 ## 0.4.0 · 19/10/2026
 
 - Tela **Minha marca** (`/app/settings/marca`, com link no menu e atalho "Editar marca" na criação): nome (até 100), atividade (até 2000), cor principal com seletor e hex, logo PNG/JPG de até 5 MB com prévia em fundo claro e escuro, trocar e remover.

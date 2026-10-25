@@ -1,5 +1,12 @@
 import "server-only";
-import { storedBrand } from "@/server/adapters/local/repository";
+import { storedBrand, storedPeople } from "@/server/adapters/local/repository";
+/** People with recorded consent who can be included in an art. Photos stay private. */
+export type BrandPersonView = {
+  id: string;
+  name: string;
+  photo_urls: string[];
+  consent_at: string;
+};
 export type CompanyContext = {
   name: string;
   description: string;
@@ -8,6 +15,7 @@ export type CompanyContext = {
   logoUrl: string | null;
   logoMode: "ai" | "stamp";
   accent: string | null;
+  people: BrandPersonView[];
 };
 export const defaultBrand = {
   name: "Sua empresa",
@@ -29,5 +37,13 @@ export async function companyContext(org: string): Promise<CompanyContext> {
       : null,
     logoMode: brand?.logo_mode === "ai" ? "ai" : "stamp",
     accent: brand?.accent || defaultBrand.accent,
+    people: storedPeople(org).map((person) => ({
+      id: person.id,
+      name: person.name,
+      consent_at: person.consent_at,
+      photo_urls: person.photos.map(
+        (_, index) => `/api/v1/brand/people/${person.id}/photos/${index + 1}`,
+      ),
+    })),
   };
 }

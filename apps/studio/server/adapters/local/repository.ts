@@ -63,6 +63,7 @@ export function database() {
     CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,tenant TEXT NOT NULL,item_id TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'queued',context TEXT NOT NULL,created_at TEXT NOT NULL,started_at TEXT,cost REAL NOT NULL DEFAULT 0,UNIQUE(tenant,item_id));
     CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(state,created_at);
     CREATE TABLE IF NOT EXISTS brands(tenant TEXT PRIMARY KEY,description TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS brand_people(tenant TEXT NOT NULL,id TEXT NOT NULL,name TEXT NOT NULL,photos TEXT NOT NULL,consent_at TEXT NOT NULL,consent_by TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(tenant,id));
     CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   `);
   let phase = "inicialização do SQLite";
@@ -498,6 +499,82 @@ export function replaceBrandLogo(tenant: string, path: string | null): string | 
        ON CONFLICT(tenant) DO UPDATE SET logo_path=excluded.logo_path,updated_at=excluded.updated_at`,
     ).run(tenant, "", path, new Date().toISOString());
     return previous;
+  });
+}
+/** People registered in "Minha marca" who authorized the use of their image. */
+export type PersonRow = {
+  id: string;
+  name: string;
+  photos: string[];
+  consent_at: string;
+  consent_by: string;
+  created_at: string;
+};
+export const maxBrandPeople = 10;
+function personRow(row: Omit<PersonRow, "photos"> & { photos: string }): PersonRow {
+  const photos = storedJson<unknown>(row.photos, "fotos de pessoa da marca");
+  if (!Array.isArray(photos) || !photos.every((photo) => typeof photo === "string"))
+    throw new Error("Registro de fotos inválido.");
+  return { ...row, photos };
+}
+export function storedPeople(tenant: string): PersonRow[] {
+  return (
+    database()
+      .prepare(
+        "SELECT id,name,photos,consent_at,consent_by,created_at FROM brand_people WHERE tenant=? ORDER BY created_at,id",
+      )
+      .all(tenant) as (Omit<PersonRow, "photos"> & { photos: string })[]
+  ).map(personRow);
+}
+export function storedPerson(tenant: string, id: string): PersonRow | undefined {
+  const row = database()
+    .prepare(
+      "SELECT id,name,photos,consent_at,consent_by,created_at FROM brand_people WHERE tenant=? AND id=?",
+    )
+    .get(tenant, id.toLowerCase()) as (Omit<PersonRow, "photos"> & { photos: string }) | undefined;
+  return row ? personRow(row) : undefined;
+}
+/** Register a person; consent is mandatory and recorded with who confirmed it and when. */
+export function savePerson(
+  tenant: string,
+  person: { id: string; name: string; photos: string[]; consent_by: string },
+) {
+  const db = database();
+  return transaction(db, () => {
+    const count = (
+      db.prepare("SELECT COUNT(*) AS n FROM brand_people WHERE tenant=?").get(tenant) as {
+        n: number;
+      }
+    ).n;
+    if (count >= maxBrandPeople)
+      throw new HttpError(
+        409,
+        "people_limit",
+        `Limite de ${maxBrandPeople} pessoas por marca. Remova uma antes de adicionar outra.`,
+      );
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO brand_people(tenant,id,name,photos,consent_at,consent_by,created_at) VALUES(?,?,?,?,?,?,?)",
+    ).run(
+      tenant,
+      person.id.toLowerCase(),
+      person.name,
+      JSON.stringify(person.photos),
+      now,
+      person.consent_by,
+      now,
+    );
+    return storedPerson(tenant, person.id)!;
+  });
+}
+/** Remove the record and return its photo files so the caller deletes them right away. */
+export function deletePerson(tenant: string, id: string): string[] | undefined {
+  const db = database();
+  return transaction(db, () => {
+    const person = storedPerson(tenant, id);
+    if (!person) return;
+    db.prepare("DELETE FROM brand_people WHERE tenant=? AND id=?").run(tenant, person.id);
+    return person.photos;
   });
 }
 /** Logo files that queued or running jobs of this tenant still need. */

@@ -2,7 +2,7 @@
 
 ## Contratos do SDK
 
-`createStudio({ ai, repository, assets }).create(tenantId, input, company?, logo?)` continua sendo uma operação que aguarda a geração. Valida a entrada, salva uma intenção antes da IA e retorna o item concluído. `tenantId` vem da sessão autenticada; o anfitrião aplica permissões, limites, orçamento e auditoria.
+`createStudio({ ai, repository, assets }).create(tenantId, input, company?, logo?, person?)` continua sendo uma operação que aguarda a geração. Valida a entrada, salva uma intenção antes da IA e retorna o item concluído. `tenantId` vem da sessão autenticada; o anfitrião aplica permissões, limites, orçamento e auditoria.
 
 `StudioRepository` mantém os contratos existentes:
 
@@ -17,6 +17,8 @@ UUIDs são normalizados para lowercase. O mesmo UUID devolve a intenção já ex
 
 Logo vem do storage da organização autenticada. O aplicativo oferece dois modos (`CompanyContext.logoMode`): `"ai"` envia o logo como imagem de referência (`images/edits`, com `input_fidelity: "high"` em `gpt-image-1` e `gpt-image-1.5`), e `"stamp"` gera a arte sem logo e entrega o arquivo original a `AssetStore.save` em `options.logo`, para o adapter aplicá-lo no canto inferior direito, dentro da área segura. O adapter do app faz isso com Sharp e é o modo padrão, pois o logo sai idêntico e não depende do provedor de imagem. Sem `logoMode`, o SDK mantém o comportamento anterior (`"ai"`). `createStudio` valida assinatura PNG/JPEG e limite de 5 MB; a associação à organização é responsabilidade do anfitrião. Funções de baixo nível de `createAi` recebem entradas previamente validadas. Textos, páginas pesquisadas e dados da marca são conteúdo, não instruções privilegiadas.
 
+Pessoas na arte: um post pode pedir `person_id` (UUID). Nesse caso o anfitrião passa `person: BrandPerson` (`{ id, name, photos }`, de 1 a `maxPersonPhotos` = 3 imagens PNG/JPEG de até 5 MB). `createStudio` recusa, antes de qualquer chamada paga, pessoa ausente, de outro ID ou com fotos inválidas. `createImage` usa `images/edits` com as fotos **antes** do logo, porque o provedor preserva com mais detalhe a primeira referência, e `input_fidelity: "high"` nos modelos que aceitam. No modo `"stamp"` o logo continua fora do pedido e é aplicado depois. O nome vai no prompt como dado JSON. O rosto é aproximado, não idêntico, e nem todo provedor aceita imagens de referência. Coletar e registrar a autorização da pessoa, manter as fotos privadas e enviá-las só ao provedor de imagem são responsabilidades do anfitrião.
+
 ## Autenticação e marca no aplicativo
 
 `server/runtime.ts` resolve um contexto por requisição: usuário em `requireAuth(request)`, organização e papel em `resolveActiveOrg(user)`, marca em `companyContext(orgId)`. O handler usa esse contexto em leitura, arquivos, criação, edição, retry e arquivamento. Escrita exige papel `admin`, `owner` ou `editor`.
@@ -24,6 +26,8 @@ Logo vem do storage da organização autenticada. O aplicativo oferece dois modo
 Os adapters em `lib/auth/server.ts` retornam identidade local fixa; substitua-os pelo login e seleção de organização do seu produto, junto com `hooks/auth/AuthProvider.tsx`. A proteção de Host/Origin limita o exemplo a loopback. Ao hospedar, adapte também a política de origens e os cookies de sessão. Não há login de produção nem OAuth da Meta implementados.
 
 `lib/instagram/brand.ts` é consultado tanto pelas páginas quanto pelo backend. A implementação de exemplo lê da tabela `brands` o nome, a atividade, a cor e o logo cadastrados em **Minha marca** (`/app/settings/marca`); sem cadastro valem os padrões (`Sua empresa`, `#506d48`, sem logo). A API é `GET/PUT /api/v1/brand` e `GET/POST/DELETE /api/v1/brand/logo`; só `admin`, `owner` e `editor` escrevem, e o logo só é servido a usuários autenticados da própria organização. O envio é multipart (campo `logo`, PNG ou JPG até 5 MB), normalizado com Sharp e salvo como `brand-logo-<uuid>` no diretório privado da organização; o job guarda o caminho ao entrar na fila e o arquivo antigo só é removido quando nenhum job ativo o usa. No seu storage, retorne `logoPath` privado dentro do diretório de assets da organização. `loadLogo` valida o caminho e a imagem antes da geração. No seu storage, substitua esse loader e mantenha a verificação de propriedade do arquivo.
+
+**Pessoas da marca** ficam na mesma tela, na tabela `brand_people` (até 10 por organização). `POST /api/v1/brand/people` recebe multipart com `name` (até 100), `consent=true` (obrigatório; a data e o usuário que confirmou ficam registrados) e de 1 a 3 arquivos `photos` em PNG ou JPG de até 5 MB. Cada foto é girada pela orientação EXIF, perde todos os metadados (GPS, câmera, datas), é limitada a 1024 px e salva como JPEG privado `person-<id>-<uuid>.jpg`; se o cadastro falhar, nenhuma foto fica gravada. `GET /api/v1/brand/people` lista as pessoas, `GET /api/v1/brand/people/<id>/photos/<n>` serve a prévia só para a própria organização e `DELETE /api/v1/brand/people/<id>` remove o cadastro e **apaga as fotos na hora**, mesmo com gerações na fila: remover a pessoa é a forma de retirar a autorização. O job guarda só o `person_id`; o worker lê a pessoa e as fotos no momento de gerar e, se ela foi removida, marca o item como falha sem chamar a IA. Na criação e no carrossel (os 8 slides), a opção "Incluir [nome] na arte" envia `person_id`.
 
 ## HTTP e fila de geração
 

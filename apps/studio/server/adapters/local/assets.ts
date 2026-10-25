@@ -195,6 +195,88 @@ export async function pruneBrandLogos(tenant: string, keep: Set<string>) {
       .map((name) => unlink(join(/* turbopackIgnore: true */ directory, name)).catch(() => {})),
   );
 }
+const personFile = /^person-[a-f0-9-]{36}-[a-f0-9-]{36}\.jpg$/;
+const personPhotoLimit = 5_000_000;
+/**
+ * Validate (PNG/JPG, 5 MB) and store one face photo privately. EXIF orientation is applied and
+ * every metadata block (GPS, camera, dates) is dropped; the largest side is limited to 1024 px.
+ */
+export async function savePersonPhoto(tenant: string, personId: string, bytes: Uint8Array) {
+  if (!bytes.length || bytes.length > personPhotoLimit)
+    throw new HttpError(400, "invalid_photo", "Cada foto deve ser PNG ou JPG de até 5 MB.");
+  const signature = Buffer.from(bytes.subarray(0, 8)).toString("hex");
+  if (signature !== "89504e470d0a1a0a" && !signature.startsWith("ffd8ff"))
+    throw new HttpError(
+      400,
+      "invalid_photo",
+      "Formato não aceito. Envie fotos em PNG ou JPG; HEIC, WebP, SVG e PDF não são aceitos.",
+    );
+  let normalized: Buffer;
+  try {
+    normalized = await sharp(Buffer.from(bytes), { limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  } catch {
+    throw new HttpError(
+      400,
+      "invalid_photo",
+      "Não foi possível ler uma das fotos. Ela pode estar corrompida.",
+    );
+  }
+  const directory = tenantDirectory(tenant);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const name = `person-${studioId.parse(personId)}-${crypto.randomUUID()}.jpg`;
+  await atomicFile(join(/* turbopackIgnore: true */ directory, name), normalized);
+  return name;
+}
+/** Read the photos of a registered person; a missing file means the person was removed. */
+export async function loadPersonPhotos(tenant: string, names: string[]): Promise<Logo[]> {
+  const directory = tenantDirectory(tenant);
+  return Promise.all(
+    names.map(async (name) => {
+      if (!personFile.test(name))
+        throw new HttpError(400, "invalid_photo", "Foto de pessoa inválida.");
+      try {
+        const bytes = await readFile(join(/* turbopackIgnore: true */ directory, name));
+        return { bytes: new Uint8Array(bytes), type: "image/jpeg" as const };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          throw new HttpError(
+            409,
+            "person_removed",
+            "As fotos desta pessoa foram removidas da marca. Nenhuma arte foi gerada com elas.",
+          );
+        throw error;
+      }
+    }),
+  );
+}
+export async function readPersonPhoto(tenant: string, name: string) {
+  if (!personFile.test(name)) throw new HttpError(404, "photo_not_found", "Foto não encontrada.");
+  try {
+    return await readFile(join(/* turbopackIgnore: true */ tenantDirectory(tenant), name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new HttpError(404, "photo_not_found", "Foto não encontrada.");
+    throw error;
+  }
+}
+/** Delete photo files immediately; removal is how a person withdraws consent. */
+export async function deletePersonPhotos(tenant: string, names: string[]) {
+  const directory = tenantDirectory(tenant);
+  await Promise.all(
+    names
+      .filter((name) => personFile.test(name))
+      .map((name) =>
+        unlink(join(/* turbopackIgnore: true */ directory, name)).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }),
+      ),
+  );
+}
 export async function readBrandLogo(tenant: string, path: string) {
   if (!logoFile.test(path)) throw new HttpError(404, "logo_not_found", "Logo não encontrado.");
   try {

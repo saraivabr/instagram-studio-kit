@@ -6,6 +6,7 @@ import {
   editSchema,
   studioId,
   carouselTemplates,
+  maxPersonPhotos,
   StudioError,
   SocialError,
 } from "@saraivabr/instagram-studio-kit";
@@ -29,8 +30,18 @@ import {
   replaceBrandLogo,
   logoPathsInUse,
   storedBrand,
+  savePerson,
+  storedPerson,
+  deletePerson,
 } from "@/server/adapters/local/repository";
-import { saveBrandLogo, pruneBrandLogos, readBrandLogo } from "@/server/adapters/local/assets";
+import {
+  saveBrandLogo,
+  pruneBrandLogos,
+  readBrandLogo,
+  savePersonPhoto,
+  readPersonPhoto,
+  deletePersonPhotos,
+} from "@/server/adapters/local/assets";
 import {
   socialConfiguration,
   connections,
@@ -61,6 +72,7 @@ const carouselSchema = z
     brief: z.string().trim().min(10).max(3000),
     niche: z.string().trim().min(2).max(2000),
     use_logo: z.boolean().default(true),
+    person_id: studioId.optional(),
     format: z.literal("feed").default("feed"),
   })
   .strict();
@@ -76,16 +88,23 @@ const brandSchema = z
   })
   .strict();
 const logoLimit = 5_000_000;
-/** Read a multipart logo upload under its own 5 MB limit (the JSON limit is 20 KB). */
-async function readLogoUpload(req: NextRequest) {
+const photoLimit = 5_000_000;
+const personNameSchema = z.string().trim().min(1).max(100);
+/** Read a multipart upload under its own limit (the JSON limit is 20 KB). */
+async function readMultipart(
+  req: NextRequest,
+  limit: number,
+  tooLarge: { code: string; message: string },
+  multipartMessage: string,
+) {
   const type = req.headers.get("content-type") ?? "";
   if (!/^multipart\/form-data;/i.test(type))
-    throw new HttpError(400, "multipart_required", "Envie o logo como arquivo (multipart).");
+    throw new HttpError(400, "multipart_required", multipartMessage);
   const declared = Number(req.headers.get("content-length") ?? 0);
-  const cap = logoLimit + 100_000;
-  if (declared > cap) throw new HttpError(413, "logo_too_large", "O logo deve ter até 5 MB.");
+  const cap = limit + 100_000;
+  if (declared > cap) throw new HttpError(413, tooLarge.code, tooLarge.message);
   const reader = req.body?.getReader();
-  if (!reader) throw new HttpError(400, "body_required", "Envie um arquivo de logo.");
+  if (!reader) throw new HttpError(400, "body_required", "Envie um arquivo.");
   const chunks: Uint8Array[] = [];
   let length = 0;
   while (true) {
@@ -94,18 +113,25 @@ async function readLogoUpload(req: NextRequest) {
     length += value.length;
     if (length > cap) {
       await reader.cancel();
-      throw new HttpError(413, "logo_too_large", "O logo deve ter até 5 MB.");
+      throw new HttpError(413, tooLarge.code, tooLarge.message);
     }
     chunks.push(value);
   }
-  let form: FormData;
   try {
-    form = await new Response(Buffer.concat(chunks), {
+    return await new Response(Buffer.concat(chunks), {
       headers: { "content-type": type },
     }).formData();
   } catch {
     throw new HttpError(400, "invalid_upload", "Upload inválido.");
   }
+}
+async function readLogoUpload(req: NextRequest) {
+  const form = await readMultipart(
+    req,
+    logoLimit,
+    { code: "logo_too_large", message: "O logo deve ter até 5 MB." },
+    "Envie o logo como arquivo (multipart).",
+  );
   const file = form.get("logo") ?? form.get("file");
   if (!(file instanceof File) || !file.size)
     throw new HttpError(400, "logo_required", "Escolha um arquivo de logo.");
@@ -192,6 +218,79 @@ export async function handleStudioRequest(req: NextRequest) {
         },
       });
     }
+    const people = /^\/api\/v1\/brand\/people(?:\/([^/]+)(?:\/photos\/([^/]+))?)?$/.exec(path);
+    if (people) {
+      const [, rawId, photo] = people;
+      const peopleView = async () => ({
+        people: (await companyContext(tenant)).people,
+        can_edit: ["admin", "owner", "editor"].includes(context.role),
+      });
+      if (!rawId) {
+        allow("GET", "POST");
+        if (req.method === "GET") return respond(await peopleView());
+        ensureWrite();
+        const form = await readMultipart(
+          req,
+          photoLimit * maxPersonPhotos,
+          { code: "photos_too_large", message: "Cada foto deve ter até 5 MB." },
+          "Envie as fotos como arquivos (multipart).",
+        );
+        if (!["true", "on", "1"].includes(String(form.get("consent") ?? "")))
+          throw new HttpError(
+            400,
+            "consent_required",
+            "Confirme que você tem autorização desta pessoa para usar a imagem dela.",
+          );
+        const name = personNameSchema.safeParse(form.get("name"));
+        if (!name.success)
+          throw new HttpError(400, "invalid_name", "Informe o nome da pessoa, até 100 caracteres.");
+        const files = form
+          .getAll("photos")
+          .filter((file): file is File => file instanceof File && file.size > 0);
+        if (!files.length || files.length > maxPersonPhotos)
+          throw new HttpError(
+            400,
+            "photos_required",
+            `Envie de 1 a ${maxPersonPhotos} fotos de frente da pessoa.`,
+          );
+        if (files.some((file) => file.size > photoLimit))
+          throw new HttpError(413, "photos_too_large", "Cada foto deve ter até 5 MB.");
+        const id = randomUUID();
+        const saved: string[] = [];
+        try {
+          for (const file of files)
+            saved.push(await savePersonPhoto(tenant, id, new Uint8Array(await file.arrayBuffer())));
+          savePerson(tenant, { id, name: name.data, photos: saved, consent_by: context.userId });
+        } catch (error) {
+          // Never keep photos of someone who was not registered.
+          await deletePersonPhotos(tenant, saved);
+          throw error;
+        }
+        return respond(await peopleView(), 201);
+      }
+      const id = studioId.parse(rawId);
+      if (photo) {
+        allow("GET");
+        const index = Number(photo);
+        const file = Number.isInteger(index) ? storedPerson(tenant, id)?.photos[index - 1] : null;
+        if (!file) throw new HttpError(404, "photo_not_found", "Foto não encontrada.");
+        return new NextResponse(new Uint8Array(await readPersonPhoto(tenant, file)), {
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Request-ID": requestId,
+          },
+        });
+      }
+      allow("DELETE");
+      ensureWrite();
+      const removed = deletePerson(tenant, id);
+      if (!removed) throw new HttpError(404, "person_not_found", "Pessoa não encontrada.");
+      // Removing a person withdraws consent: the photos go away now, even with jobs queued.
+      await deletePersonPhotos(tenant, removed);
+      return respond(await peopleView());
+    }
     if (path === "/api/v1/brand" || path === "/api/v1/brand/logo") {
       const view = async () => {
         const brand = await companyContext(tenant);
@@ -203,6 +302,7 @@ export async function handleStudioRequest(req: NextRequest) {
           accent: brand.accent,
           logo_url: brand.logoUrl,
           logo_mode: brand.logoMode,
+          people: brand.people,
           can_edit: [`admin`, `owner`, `editor`].includes(context.role),
         };
       };
@@ -289,6 +389,7 @@ export async function handleStudioRequest(req: NextRequest) {
           brief: input.brief,
           niche: input.niche,
           use_logo: input.use_logo,
+          ...(input.person_id ? { person_id: input.person_id } : {}),
           format: "feed",
           carousel: { id: input.id, template: input.template, slide: index + 1 },
         }),

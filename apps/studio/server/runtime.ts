@@ -20,8 +20,9 @@ import {
   recoverInterruptedJobs,
   logoPathsInUse,
   storedBrand,
+  storedPerson,
 } from "./adapters/local/repository";
-import { localAssets, loadLogo, pruneBrandLogos } from "./adapters/local/assets";
+import { localAssets, loadLogo, loadPersonPhotos, pruneBrandLogos } from "./adapters/local/assets";
 import { mockAiRequest } from "./adapters/demo/ai";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { companyContext } from "@/lib/instagram/brand";
@@ -89,7 +90,7 @@ export async function requestContext(request?: Request) {
   if (!org?.orgId?.trim())
     throw new HttpError(403, "organization_required", "Organização ativa obrigatória.");
   const brand = await companyContext(org.orgId);
-  return { tenantId: org.orgId, role: org.role, brand };
+  return { tenantId: org.orgId, userId: String(user.id), role: org.role, brand };
 }
 export type RequestContext = Awaited<ReturnType<typeof requestContext>>;
 export function present(item: StudioItem, role = "viewer") {
@@ -133,6 +134,15 @@ export async function queueInputs(
     );
   if (inputs.some((input) => input.kind === "post" && input.use_logo))
     await loadLogo(context.tenantId, context.brand.logoPath);
+  for (const id of new Set(
+    inputs.flatMap((input) => (input.kind === "post" && input.person_id ? [input.person_id] : [])),
+  ))
+    if (!storedPerson(context.tenantId, id))
+      throw new HttpError(
+        400,
+        "person_not_found",
+        "Essa pessoa não está cadastrada em Minha marca. Confira a lista antes de gerar.",
+      );
   const items = enqueue(
     context.tenantId,
     inputs,
@@ -192,7 +202,23 @@ async function runWorker() {
         item.input.kind === "post" && item.input.use_logo
           ? await loadLogo(job.tenant, job.context.logoPath)
           : undefined;
-      await application().generateClaimed(job.tenant, item.input, job.context, logo);
+      let person;
+      if (item.input.kind === "post" && item.input.person_id) {
+        // Read consent at generation time: a person removed while queued is never depicted.
+        const stored = storedPerson(job.tenant, item.input.person_id);
+        if (!stored)
+          throw new HttpError(
+            409,
+            "person_removed",
+            "Esta pessoa foi removida da marca antes da geração. Nenhuma arte foi gerada com a imagem dela.",
+          );
+        person = {
+          id: stored.id,
+          name: stored.name,
+          photos: await loadPersonPhotos(job.tenant, stored.photos),
+        };
+      }
+      await application().generateClaimed(job.tenant, item.input, job.context, logo, person);
       finishJob(job.id, true);
     } catch (error) {
       const known =

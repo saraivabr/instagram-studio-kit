@@ -256,3 +256,149 @@ test("AI mode still generates and keeps the logo available as reference", async 
     logo_mode: "stamp",
   });
 });
+const face = (r, g, b) =>
+  sharp({ create: { width: 640, height: 800, channels: 3, background: { r, g, b } } })
+    .jpeg()
+    .withExif({ IFD0: { Copyright: "camera-privada", ImageDescription: "gps-privado" } })
+    .toBuffer();
+const addPerson = async ({ name = "Ana Souza", consent = true, photos } = {}) => {
+  const form = new FormData();
+  if (name !== null) form.append("name", name);
+  if (consent) form.append("consent", "true");
+  for (const [bytes, type, file] of photos ?? [[await face(200, 160, 140), "image/jpeg", "a.jpg"]])
+    form.append("photos", new Blob([bytes], { type }), file);
+  return call("/api/v1/brand/people", "POST", form);
+};
+const personFiles = () => {
+  const directory = join(data, "assets", createHash("sha256").update("local").digest("hex"));
+  try {
+    return readdirSync(directory).filter((name) => name.startsWith("person-"));
+  } catch {
+    return [];
+  }
+};
+test("a person needs consent, a name and 1 to 3 valid photos", async () => {
+  const jpg = await face(10, 20, 30);
+  const refused = [
+    [{ consent: false }, 400, /autorização/],
+    [{ name: "" }, 400, /nome/],
+    [{ name: "x".repeat(101) }, 400, /nome/],
+    [{ photos: [] }, 400, /1 a 3/],
+    [{ photos: Array.from({ length: 4 }, () => [jpg, "image/jpeg", "f.jpg"]) }, 400, /1 a 3/],
+    [{ photos: [[Buffer.from("%PDF-1.7"), "application/pdf", "f.pdf"]] }, 400, /PNG ou JPG/],
+    [{ photos: [[await sharp(jpg).webp().toBuffer(), "image/webp", "f.webp"]] }, 400, /PNG/],
+    [
+      {
+        photos: [
+          [
+            Buffer.concat([Buffer.from("ffd8ffe0", "hex"), Buffer.from("quebrada")]),
+            "image/jpeg",
+            "f.jpg",
+          ],
+        ],
+      },
+      400,
+      /corrompida/,
+    ],
+  ];
+  for (const [options, status, message] of refused) {
+    const response = await addPerson(options);
+    assert.equal(response.status, status, JSON.stringify(Object.keys(options)));
+    assert.match((await response.json()).error.message, message);
+  }
+  assert.deepEqual(personFiles(), [], "nenhuma foto fica gravada quando o cadastro é recusado");
+  assert.deepEqual((await (await call("/api/v1/brand/people")).json()).data.people, []);
+  const foreign = new FormData();
+  foreign.append("name", "Ana");
+  foreign.append("consent", "true");
+  foreign.append("photos", new Blob([jpg], { type: "image/jpeg" }), "a.jpg");
+  const evil = await fetch(base + "/api/v1/brand/people", {
+    method: "POST",
+    headers: { Origin: "http://evil.example" },
+    body: foreign,
+  });
+  assert.equal(evil.status, 403);
+});
+test("a person is stored privately, without metadata, and can appear in posts and carousels", async () => {
+  const created = await addPerson({
+    photos: [
+      [await face(200, 160, 140), "image/jpeg", "frente.jpg"],
+      [await red(500, 700), "image/png", "frente.png"],
+    ],
+  });
+  assert.equal(created.status, 201);
+  const [person] = (await created.json()).data.people;
+  assert.equal(person.name, "Ana Souza");
+  assert.equal(person.photo_urls.length, 2);
+  assert.ok(Date.parse(person.consent_at));
+  assert.equal((await (await call("/api/v1/brand")).json()).data.people.length, 1);
+  const served = await call(person.photo_urls[0]);
+  assert.equal(served.status, 200);
+  assert.equal(served.headers.get("content-type"), "image/jpeg");
+  assert.match(served.headers.get("cache-control"), /private/);
+  const meta = await sharp(Buffer.from(await served.arrayBuffer())).metadata();
+  assert.equal(meta.exif, undefined, "EXIF removido");
+  assert.ok(Math.max(meta.width, meta.height) <= 1024);
+  assert.equal((await call(`/api/v1/brand/people/${person.id}/photos/3`)).status, 404);
+  assert.equal(personFiles().length, 2);
+  const single = await ready(
+    (await (await call("/api/v1/instagram", "POST", post({ person_id: person.id }))).json()).data
+      .id,
+  );
+  assert.equal(single.input.person_id, person.id);
+  const ids = Array.from({ length: 8 }, () => randomUUID());
+  const carousel = await call("/api/v1/instagram/carousels", "POST", {
+    id: randomUUID(),
+    item_ids: ids,
+    template: "noticia_impacto_operacional",
+    brief: "Uma novidade apresentada pela Ana.",
+    niche: "Tributos para empresas",
+    use_logo: false,
+    person_id: person.id,
+    format: "feed",
+  });
+  assert.equal(carousel.status, 202);
+  for (const id of ids) assert.equal((await ready(id)).input.person_id, person.id);
+  const unknown = await call("/api/v1/instagram", "POST", post({ person_id: randomUUID() }));
+  assert.equal(unknown.status, 400);
+  assert.match((await unknown.json()).error.message, /não está cadastrada/);
+});
+test("removing a person deletes the photos now and queued arts never use them", async () => {
+  const [person] = (await (await call("/api/v1/brand/people")).json()).data.people;
+  const ids = Array.from({ length: 8 }, () => randomUUID());
+  assert.equal(
+    (
+      await call("/api/v1/instagram/carousels", "POST", {
+        id: randomUUID(),
+        item_ids: ids,
+        template: "noticia_impacto_operacional",
+        brief: "Outra novidade apresentada pela Ana.",
+        niche: "Tributos para empresas",
+        use_logo: false,
+        person_id: person.id,
+        format: "feed",
+      })
+    ).status,
+    202,
+  );
+  const removed = await call(`/api/v1/brand/people/${person.id}`, "DELETE");
+  assert.equal(removed.status, 200);
+  assert.deepEqual((await removed.json()).data.people, []);
+  assert.deepEqual(personFiles(), [], "fotos apagadas na hora, mesmo com a fila cheia");
+  assert.equal((await call(person.photo_urls[0])).status, 404);
+  const states = [];
+  for (const id of ids) {
+    const deadline = Date.now() + 60000;
+    let item;
+    while (Date.now() < deadline) {
+      item = (await (await call(`/api/v1/instagram/${id}`)).json()).data;
+      if (item.status !== "generating") break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    states.push(item);
+  }
+  const failed = states.filter((item) => item.status === "failed");
+  assert.ok(failed.length >= 1, "slides ainda na fila não usam a pessoa removida");
+  for (const item of failed) assert.match(item.error, /removida/);
+  assert.equal((await call(`/api/v1/brand/people/${person.id}`, "DELETE")).status, 404);
+});

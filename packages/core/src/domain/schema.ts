@@ -21,6 +21,8 @@ export const createSchema = z.discriminatedUnion("kind", [
       brief: z.string().trim().min(10).max(3000),
       niche: z.string().trim().min(2).max(2000),
       use_logo: z.boolean().default(true),
+      /** A person registered in the brand, with consent, to appear in the art. */
+      person_id: studioId.optional(),
       format: z.enum(["feed", "square", "story"]),
       caption: z.string().max(2200).default(""),
       carousel: z

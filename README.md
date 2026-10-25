@@ -20,7 +20,7 @@ Descreva o negócio e o que você quer comunicar. O estúdio cria a arte e a leg
 | --------------------- | ------------------------------------------------------------------------------------------ |
 | **Artes com IA**      | Post vertical, quadrado e Story, com imagem e legenda                                      |
 | **Carrosséis**        | Oito slides enviados em uma única operação; a geração continua no servidor ao fechar a aba |
-| **Identidade visual** | Nome, contexto, cor e logo fornecidos pelo cadastro da organização                         |
+| **Identidade visual** | Nome, contexto, cor, logo e pessoas autorizadas a aparecer nas artes                       |
 | **Biblioteca**        | Paginação, filtros, miniaturas, revisão e edição de legenda de posts prontos               |
 | **Recuperação**       | Pedidos interrompidos podem ser refeitos com novo UUID; itens podem ser arquivados         |
 | **Referências**       | Perfis salvos e pesquisa com fontes verificáveis quando a IA está configurada              |
@@ -109,7 +109,7 @@ Use **`apps/studio/`** dentro do workspace. As telas ficam em `features/instagra
 | Ponto                            | Onde conectar seus serviços                                         |
 | -------------------------------- | ------------------------------------------------------------------- |
 | Sessão, organização e permissões | `lib/auth/server.ts` e `hooks/auth/AuthProvider.tsx`                |
-| Cadastro, contexto, cor e logo   | `lib/instagram/brand.ts`; contexto resolvido em `server/runtime.ts` |
+| Cadastro, cor, logo e pessoas    | `lib/instagram/brand.ts`; contexto resolvido em `server/runtime.ts` |
 | Banco e fila de geração          | `server/adapters/local/repository.ts`                               |
 | Imagens privadas e miniaturas    | `server/adapters/local/assets.ts`                                   |
 | IA, configuração e execução      | `server/runtime.ts`                                                 |
