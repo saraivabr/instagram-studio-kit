@@ -12,3 +12,6 @@ package-lock.json
 playwright-report/
 test-results/
 *.tgz
+tempo/.tempo/
+tempo/.next/
+.tempo/

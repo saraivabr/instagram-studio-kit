@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { resolve } from "node:path";
+import tempoNextjsPlugin from "tempo-sdk/nextjs";
 
 const development = process.env.NODE_ENV === "development";
 // App Router needs inline hydration scripts. Hosts that require strict script
@@ -39,4 +40,7 @@ const config: NextConfig = {
     ];
   },
 };
-export default config;
+// The plugin only annotates elements under TEMPO=true; otherwise the config is unchanged.
+export default tempoNextjsPlugin()(
+  config as Parameters<ReturnType<typeof tempoNextjsPlugin>>[0],
+) as NextConfig;

@@ -11,3 +11,8 @@ dist/
 next-env.d.ts
 playwright-report/
 test-results/
+tempo/.tempo/
+tempo/node_modules/
+tempo/dist/
+/.tempo/
+tempo/.next/

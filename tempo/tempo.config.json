@@ -1,0 +1,16 @@
+{
+  "paths": {
+    "canvases": "./designs"
+  },
+  "scripts": {
+    "install": "cd .. && npm install && cd tempo && npm install",
+    "start": "npm run dev"
+  },
+  "apps": [
+    {
+      "appDir": "apps/studio",
+      "start": "npx next dev --hostname 127.0.0.1 --port ${APP_PORT}",
+      "url": "http://127.0.0.1:${APP_PORT}"
+    }
+  ]
+}
