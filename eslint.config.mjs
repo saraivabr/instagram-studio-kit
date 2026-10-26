@@ -58,5 +58,8 @@ export default defineConfig([
     "docs/legacy/**",
     "playwright-report/**",
     "test-results/**",
+    "tempo/.tempo/**",
+    "tempo/.next/**",
+    ".tempo/**",
   ]),
 ]);
