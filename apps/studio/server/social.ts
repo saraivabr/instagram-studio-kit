@@ -450,10 +450,19 @@ export async function growth(context: RequestContext, query: URLSearchParams) {
     requireInstagramAccount(social, account);
     return { posts: await instagramPosts(social.key, account) };
   }
+  let skipped = 0;
+  const automations = await instagramAutomations(social, {
+    onSkipped: (count) => (skipped = count),
+  });
   return {
-    automations: await instagramAutomations(social),
+    automations,
     accounts: accounts(social),
     can_edit: ["admin", "owner", "editor"].includes(context.role),
+    ...(skipped
+      ? {
+          message: `${skipped === 1 ? "1 regra da Zernio não pôde ser lida e não aparece" : `${skipped} regras da Zernio não puderam ser lidas e não aparecem`} aqui. Confira no painel da Zernio.`,
+        }
+      : {}),
   };
 }
 export async function changeGrowth(context: RequestContext, body: unknown) {

@@ -312,7 +312,7 @@ test("a requested person must match, carry valid photos and reach the provider",
   const h = harness();
   const withPerson = { ...input(), use_logo: false, person_id: person.id };
   await assert.rejects(h.studio.create("a", withPerson), /Pessoa não encontrada/);
-  for (const consentAt of [undefined, "", "ontem"])
+  for (const consentAt of [undefined, "", "ontem", "03/04/2025", "2025-04-03"])
     await assert.rejects(
       h.studio.create("a", withPerson, undefined, undefined, { ...person, consentAt }),
       /Autorização de uso de imagem/,

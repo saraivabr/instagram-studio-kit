@@ -118,6 +118,8 @@ test("media and citation sources must be public https hosts", () => {
     "https://[::ffff:127.0.0.1]/a.png",
     "https://[fd00::1]/a.png",
     "https://[fe80::1]/a.png",
+    "https://localhost./a.png",
+    "https://printer.local./a.png",
   ])
     assert.equal(safeSource(url), false, url);
 });
@@ -537,8 +539,10 @@ test("account context, posts and automation listing stay within the selected org
     (error) => error.status === 422,
   );
   assert.equal((await instagramPosts("test-key", account))[0].id, "123_456");
-  const rules = await instagramAutomations(resolved);
+  let skipped = 0;
+  const rules = await instagramAutomations(resolved, { onSkipped: (count) => (skipped = count) });
   assert.equal(rules.length, 1);
+  assert.equal(skipped, 1, "the malformed Instagram record is reported, not silently lost");
   assert.deepEqual(rules[0].stats, { triggered: 0, dmsSent: 0, dmsFailed: 0, read: 0 });
   assert.equal(calls[1].url.pathname, `/api/v1/accounts/${account}/posts`);
 });

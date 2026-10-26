@@ -76,9 +76,17 @@ export interface StudioItem {
   created_at: string;
   updated_at: string;
 }
-/** Hosts a provider would fetch from inside its own network: loopback, private, link-local. */
+/**
+ * Hosts a provider would fetch from inside its own network: loopback, private, link-local.
+ * Only the literal hostname is checked: a public name that resolves to an internal address must be
+ * blocked by the fetcher itself, which resolves again at request time (DNS can change in between).
+ */
 function internalHost(hostname: string) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // "localhost." and "printer.local." are the same hosts as without the trailing dot.
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   if (host.includes(":")) {
     // WHATWG URL serializes ::ffff:127.0.0.1 as ::ffff:7f00:1.
     const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);

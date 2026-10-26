@@ -21,7 +21,7 @@ export type BrandPerson = {
   name: string;
   photos: ReferenceImage[];
   /** When the host recorded the person's authorization (ISO 8601). Studio refuses a person without it. */
-  consentAt?: string;
+  consentAt: string;
 };
 /** Only the first reference keeps maximum detail, so faces go first and at most three. */
 export const maxPersonPhotos = 3;

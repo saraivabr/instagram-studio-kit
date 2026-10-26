@@ -9,6 +9,8 @@ import {
   type StudioItem,
   type StudioInput,
   type StudioListQuery,
+  type AiRequest,
+  type BrandPerson,
   StudioError,
   SocialError,
 } from "@saraivabr/instagram-studio-kit";
@@ -21,6 +23,7 @@ import {
   logoPathsInUse,
   storedBrand,
   storedPerson,
+  legacyInput,
 } from "./adapters/local/repository";
 import {
   localAssets,
@@ -74,14 +77,21 @@ export function configuration() {
     };
   }
 }
-function application() {
+/** `beforeImage` runs right before each image request, after the caption call has finished. */
+function application(beforeImage?: () => void) {
   const config = configuration();
   const values = settings();
   if (config.mode === "incomplete")
     throw new HttpError(503, "configuration_incomplete", config.message);
+  const transport: AiRequest = config.mode === "demo" ? mockAiRequest : openAiTransport(values.key);
   return createStudio({
     ai: createAi(
-      config.mode === "demo" ? mockAiRequest : openAiTransport(values.key),
+      beforeImage
+        ? (path, body, multipart) => {
+            if (path.startsWith("images/")) beforeImage();
+            return transport(path, body, multipart);
+          }
+        : transport,
       { image: values.image || "mock", text: values.text || "mock" },
       { imageSizes: values.imageSizes },
     ),
@@ -172,9 +182,11 @@ export async function retryItem(context: RequestContext, id: string) {
       "retry_not_allowed",
       "Somente pedidos interrompidos podem ser tentados novamente.",
     );
-  const input = createSchema.parse({ ...item.input, id: randomUUID() });
+  const input = createSchema.parse(legacyInput({ ...item.input, id: randomUUID() }));
   return (await queueInputs(context, [input], id))[0]!;
 }
+const personRemoved =
+  "Esta pessoa foi removida da marca antes da geração. Nenhuma arte foi gerada com a imagem dela.";
 const state = globalThis as typeof globalThis & {
   studioWorker?: ReturnType<typeof setInterval>;
   studioWorking?: boolean;
@@ -208,16 +220,11 @@ async function runWorker() {
         item.input.kind === "post" && item.input.use_logo
           ? await loadLogo(job.tenant, job.context.logoPath)
           : undefined;
-      let person;
+      let person: BrandPerson | undefined;
       if (item.input.kind === "post" && item.input.person_id) {
         // Read consent at generation time: a person removed while queued is never depicted.
         const stored = storedPerson(job.tenant, item.input.person_id);
-        if (!stored)
-          throw new HttpError(
-            409,
-            "person_removed",
-            "Esta pessoa foi removida da marca antes da geração. Nenhuma arte foi gerada com a imagem dela.",
-          );
+        if (!stored) throw new HttpError(409, "person_removed", personRemoved);
         person = {
           id: stored.id,
           name: stored.name,
@@ -225,7 +232,19 @@ async function runWorker() {
           photos: await loadPersonPhotos(job.tenant, stored.photos),
         };
       }
-      await application().generateClaimed(job.tenant, item.input, job.context, logo, person);
+      // Removing a person withdraws consent; check again right before the photos leave, since the
+      // caption request runs first and can take seconds.
+      const stillAuthorized = () => {
+        if (person && !storedPerson(job.tenant, person.id))
+          throw new HttpError(409, "person_removed", personRemoved);
+      };
+      await application(stillAuthorized).generateClaimed(
+        job.tenant,
+        item.input,
+        job.context,
+        logo,
+        person,
+      );
       finishJob(job.id, true);
     } catch (error) {
       const known =
@@ -250,7 +269,7 @@ async function runWorker() {
           error: `${message} Confira o histórico do provedor antes de tentar novamente; uma nova geração pode ser cobrada.`,
         });
       } finally {
-        // Release the queue even if storage fails; recovery marks the item on the next boot.
+        // Release the queue even if storage fails; the next claim fails the orphaned item.
         finishJob(job.id, false);
       }
     }

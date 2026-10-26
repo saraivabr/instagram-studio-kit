@@ -42,6 +42,8 @@ export interface StudioReadRepository extends StudioRepository {
   updateCaption(tenantId: string, id: string, caption: string): Promise<StudioItem>;
   archive(tenantId: string, id: string): Promise<boolean>;
 }
+/** ISO 8601 instant with a time zone, as `Date.prototype.toISOString` writes it. */
+const isoInstant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 function studioIdOf(raw: unknown) {
   const id = studioId.safeParse((raw as { id?: unknown } | null)?.id);
   return id.success ? id.data : undefined;
@@ -70,7 +72,7 @@ export function createStudio(deps: {
     if (input.kind !== "post" || !input.person_id) return;
     if (!person || person.id.toLowerCase() !== input.person_id)
       throw new Error("Pessoa não encontrada na marca desta organização.");
-    if (!person.consentAt || Number.isNaN(Date.parse(person.consentAt)))
+    if (!isoInstant.test(person.consentAt ?? "") || Number.isNaN(Date.parse(person.consentAt)))
       throw new Error("Autorização de uso de imagem não registrada para esta pessoa.");
     if (
       !person.name.trim() ||
