@@ -37,6 +37,25 @@ function PublishPostForOrganization({ item, caption, carouselItems }: PublishPos
   const [state, setState] = useState<State>();
   const [account, setAccount] = useState("");
   const [library, setLibrary] = useState<StudioItem[]>([]);
+  const [libraryCursor, setLibraryCursor] = useState<string | null>(null);
+  const loadLibrary = (cursor?: string) =>
+    studioApi<{ items: StudioItem[]; meta: { cursor: string | null } }>(
+      `?kind=post&status=ready&limit=48${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    )
+      .then((r) => {
+        setLibrary((current) => [
+          ...current,
+          ...r.items.filter(
+            (i) =>
+              i.kind === "post" &&
+              i.status === "ready" &&
+              i.input.kind === "post" &&
+              i.input.format !== "story",
+          ),
+        ]);
+        setLibraryCursor(r.meta.cursor);
+      })
+      .catch((e) => setError(e.message));
   const [selected, setSelected] = useState<string[]>(
     carouselItems?.map((entry) => entry.id) ?? [item.id],
   );
@@ -123,20 +142,7 @@ function PublishPostForOrganization({ item, caption, carouselItems }: PublishPos
           {!story && !carouselItems && (
             <details
               onToggle={(e) => {
-                if (e.currentTarget.open && !library.length)
-                  void studioApi<{ items: StudioItem[] }>("?kind=post&status=ready")
-                    .then((r) =>
-                      setLibrary(
-                        r.items.filter(
-                          (i) =>
-                            i.kind === "post" &&
-                            i.status === "ready" &&
-                            i.input.kind === "post" &&
-                            i.input.format !== "story",
-                        ),
-                      ),
-                    )
-                    .catch((e) => setError(e.message));
+                if (e.currentTarget.open && !library.length) void loadLibrary();
               }}
             >
               <summary className="cursor-pointer text-sm underline">
@@ -181,6 +187,17 @@ function PublishPostForOrganization({ item, caption, carouselItems }: PublishPos
                   </label>
                 ))}
               </div>
+              {libraryCursor && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => void loadLibrary(libraryCursor)}
+                >
+                  {t("Carregar mais criações")}
+                </Button>
+              )}
               <Link href="/app/instagram/new" className="mt-3 inline-block text-sm underline">
                 {t("Gerar outra imagem para o carrossel")}
               </Link>

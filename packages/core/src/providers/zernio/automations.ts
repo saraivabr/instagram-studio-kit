@@ -7,6 +7,11 @@ import {
   instagramPosts,
   requireInstagramAccount,
 } from "./instagram-management.js";
+/** Keywords are a set: the same words in another order are the same rule. */
+function sameKeywords(a: readonly string[] = [], b: readonly string[] = []) {
+  const sorted = (list: readonly string[]) => JSON.stringify([...new Set(list)].sort());
+  return sorted(a) === sorted(b);
+}
 /** Host must authorize manager access, enforce quotas and audit before calling. */
 export async function mutateAutomation(
   context: Awaited<ReturnType<typeof instagramContext>>,
@@ -54,7 +59,7 @@ export async function mutateAutomation(
           samePost.name === rule.name &&
           samePost.dmMessage === rule.dm_response_template &&
           samePost.matchMode === rule.match_mode &&
-          JSON.stringify(samePost.keywords) === JSON.stringify(rule.keywords) &&
+          sameKeywords(samePost.keywords, rule.keywords) &&
           (samePost.commentReply ?? "") === rule.comment_reply
         )
           return { automation: samePost };

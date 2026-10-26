@@ -86,8 +86,12 @@ export async function instagramAutomations(context: Awaited<ReturnType<typeof in
       `comment-automations?profileId=${encodeURIComponent(context.profileId)}`,
     ),
   );
+  // One record the provider changed shape on must not hide every other rule.
   return result.automations
     .filter((a) => a.platform === "instagram")
-    .map((a) => parseSocialResponse(automationSchema, a))
+    .flatMap((a) => {
+      const parsed = automationSchema.safeParse(a);
+      return parsed.success ? [parsed.data] : [];
+    })
     .filter((a) => context.accounts.some((account) => account._id === a.accountId));
 }

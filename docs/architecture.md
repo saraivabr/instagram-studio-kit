@@ -66,7 +66,7 @@ O Tailwind inclui explicitamente `features/`, mantendo os estilos das telas. Fon
 
 ## Distribuição
 
-O app depende de `file:../../packages/core`. Para distribuí-lo isoladamente, preserve a estrutura relativa ou instale o tarball do SDK e ajuste a dependência. O pacote npm ainda não está publicado; `npm run pack:core` gera `saraivabr-instagram-studio-kit-0.2.0.tgz`.
+O app depende de `file:../../packages/core`. Para distribuí-lo isoladamente, preserve a estrutura relativa ou instale o tarball do SDK e ajuste a dependência. O pacote npm ainda não está publicado; `npm run pack:core` gera `saraivabr-instagram-studio-kit-0.6.0.tgz`.
 
 O SDK contém `dist`, sua documentação e avisos MIT. Telas, dados locais, credenciais e `docs/legacy` ficam fora do pacote. O código legado depende do CRM anterior e é referência, sem compilação.
 

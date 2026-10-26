@@ -16,7 +16,13 @@ export type ReferenceImage = Logo;
  * A real person the organization is authorized to depict. The host must collect consent,
  * keep the photos private and send them only to the image provider.
  */
-export type BrandPerson = { id: string; name: string; photos: ReferenceImage[] };
+export type BrandPerson = {
+  id: string;
+  name: string;
+  photos: ReferenceImage[];
+  /** When the host recorded the person's authorization (ISO 8601). Studio refuses a person without it. */
+  consentAt?: string;
+};
 /** Only the first reference keeps maximum detail, so faces go first and at most three. */
 export const maxPersonPhotos = 3;
 export type AiRequest = (

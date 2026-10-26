@@ -34,7 +34,12 @@ export const createSchema = z.discriminatedUnion("kind", [
         .strict()
         .optional(),
     })
-    .strict(),
+    .strict()
+    // Slide briefs describe a 4:5 vertical system; every slide of a carousel shares it.
+    .refine((post) => !post.carousel || post.format === "feed", {
+      message: "Carrosséis usam o formato feed (4:5).",
+      path: ["format"],
+    }),
   z
     .object({
       id: studioId,
@@ -71,10 +76,38 @@ export interface StudioItem {
   created_at: string;
   updated_at: string;
 }
+/** Hosts a provider would fetch from inside its own network: loopback, private, link-local. */
+function internalHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host.includes(":")) {
+    // WHATWG URL serializes ::ffff:127.0.0.1 as ::ffff:7f00:1.
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+    if (mapped) {
+      const [high, low] = [parseInt(mapped[1]!, 16), parseInt(mapped[2]!, 16)];
+      return internalHost(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+    }
+    return host === "::" || host === "::1" || /^f[cd]/.test(host) || /^fe[89ab]/.test(host);
+  }
+  const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host)?.slice(1).map(Number);
+  if (ipv4) {
+    const [a, b] = ipv4 as [number, number];
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    );
+  }
+  return !host.includes(".") || /(^|\.)(localhost|local|internal|home\.arpa)$/.test(host);
+}
 export function safeSource(url: string): boolean {
   try {
     const u = new URL(url);
-    return u.protocol === "https:" && !u.username && !u.password;
+    return u.protocol === "https:" && !u.username && !u.password && !internalHost(u.hostname);
   } catch {
     return false;
   }

@@ -1,4 +1,4 @@
-import { createSchema, type StudioInput, type StudioItem } from "../domain/schema.js";
+import { createSchema, studioId, type StudioInput, type StudioItem } from "../domain/schema.js";
 import {
   createAi,
   maxPersonPhotos,
@@ -42,6 +42,10 @@ export interface StudioReadRepository extends StudioRepository {
   updateCaption(tenantId: string, id: string, caption: string): Promise<StudioItem>;
   archive(tenantId: string, id: string): Promise<boolean>;
 }
+function studioIdOf(raw: unknown) {
+  const id = studioId.safeParse((raw as { id?: unknown } | null)?.id);
+  return id.success ? id.data : undefined;
+}
 /** Resolve tenantId and brand from the authenticated session in the host backend. */
 function validImage(image: Logo) {
   const signature = Buffer.from(image.bytes.subarray(0, 8)).toString("hex");
@@ -61,11 +65,13 @@ export function createStudio(deps: {
     if (input.kind === "post" && input.use_logo && logo && !validImage(logo))
       throw new Error("Logo inválido: envie PNG/JPG de até 5 MB.");
   }
-  /** A requested person must be the one supplied, with 1 to 3 valid photos. Never silently drop it. */
+  /** A requested person must be the one supplied, with recorded consent and 1 to 3 valid photos. Never silently drop it. */
   function validatePerson(input: StudioInput, person?: BrandPerson) {
     if (input.kind !== "post" || !input.person_id) return;
     if (!person || person.id.toLowerCase() !== input.person_id)
       throw new Error("Pessoa não encontrada na marca desta organização.");
+    if (!person.consentAt || Number.isNaN(Date.parse(person.consentAt)))
+      throw new Error("Autorização de uso de imagem não registrada para esta pessoa.");
     if (
       !person.name.trim() ||
       person.name.length > 100 ||
@@ -83,7 +89,14 @@ export function createStudio(deps: {
     person?: BrandPerson,
   ) {
     if (!tenantId.trim()) throw new Error("Organização autenticada obrigatória.");
-    const input = createSchema.parse(raw);
+    const parsed = createSchema.safeParse(raw);
+    // A claimed item must never stay "generating"; its id is the only field needed to fail it.
+    if (!parsed.success) {
+      const id = studioIdOf(raw);
+      if (id) await failClaimed(tenantId, id, parsed.error);
+      throw parsed.error;
+    }
+    const input = parsed.data;
     try {
       validateLogo(input, logo);
       validatePerson(input, person);
@@ -119,11 +132,19 @@ export function createStudio(deps: {
         status: "ready",
       });
     } catch (error) {
-      await deps.repository.complete(tenantId, input.id, {
+      await failClaimed(tenantId, input.id, error);
+      throw error;
+    }
+  }
+  /** Mark a claimed item failed; a storage error here must not hide the original cause. */
+  async function failClaimed(tenantId: string, id: string, cause: unknown) {
+    try {
+      await deps.repository.complete(tenantId, id, {
         status: "failed",
         error: "Pedido interrompido. Confira o histórico antes de gerar novamente.",
       });
-      throw error;
+    } catch (storage) {
+      if (cause instanceof Error && cause.cause === undefined) cause.cause = storage;
     }
   }
   return {

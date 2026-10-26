@@ -21,6 +21,7 @@ import {
   readInstagramPublication,
   findInstagramPublication,
   instagramInsights,
+  safeSource,
 } from "../packages/core/dist/index.js";
 
 const account = "a".repeat(24);
@@ -91,6 +92,35 @@ function mockSocial(t, handler) {
   return calls;
 }
 
+test("media and citation sources must be public https hosts", () => {
+  for (const url of [
+    "https://assets.example/post.png",
+    "https://cdn.zernio.com/a.png",
+    "https://8.8.8.8/a.png",
+    "https://[2606:4700::1111]/a.png",
+  ])
+    assert.equal(safeSource(url), true, url);
+  for (const url of [
+    "http://assets.example/post.png",
+    "https://user:pass@assets.example/a.png",
+    "https://localhost/a.png",
+    "https://api.localhost/a.png",
+    "https://intranet/a.png",
+    "https://printer.local/a.png",
+    "https://127.0.0.1/a.png",
+    "https://2130706433/a.png",
+    "https://169.254.169.254/latest/meta-data",
+    "https://10.0.0.5/a.png",
+    "https://172.20.1.1/a.png",
+    "https://192.168.0.10/a.png",
+    "https://100.64.0.1/a.png",
+    "https://[::1]/a.png",
+    "https://[::ffff:127.0.0.1]/a.png",
+    "https://[fd00::1]/a.png",
+    "https://[fe80::1]/a.png",
+  ])
+    assert.equal(safeSource(url), false, url);
+});
 test("all creation and carousel UUIDs become lowercase", () => {
   const id = randomUUID();
   const group = randomUUID();
@@ -105,6 +135,14 @@ test("all creation and carousel UUIDs become lowercase", () => {
   });
   assert.equal(post.id, id);
   assert.equal(post.carousel.id, group);
+  for (const format of ["story", "square"])
+    assert.throws(() =>
+      createSchema.parse({
+        ...postInput(),
+        format,
+        carousel: { id: group, template: "noticia_impacto_operacional", slide: 1 },
+      }),
+    );
   for (const input of [
     { id: id.toUpperCase(), kind: "reference", username: "@exemplo" },
     { id: id.toUpperCase(), kind: "research", niche: "Consultoria", brief: "Referências" },
@@ -476,6 +514,7 @@ test("account context, posts and automation listing stay within the selected org
               automation(),
               automation({ id: "f".repeat(24), accountId: otherAccount }),
               { platform: "facebook" },
+              { platform: "instagram", id: "malformed" },
             ],
           },
   );
@@ -504,6 +543,30 @@ test("account context, posts and automation listing stay within the selected org
   assert.equal(calls[1].url.pathname, `/api/v1/accounts/${account}/posts`);
 });
 
+test("reconciliation pages past the most recent posts and stops at the last page", async (t) => {
+  const id = randomUUID();
+  const calls = mockSocial(t, ({ url }) => {
+    const page = Number(url.searchParams.get("page"));
+    return {
+      posts:
+        page === 3
+          ? [receipt({}, { metadata: { studio_publication_id: id } }).post]
+          : [receipt({}, { _id: `other-${page}` }).post],
+      pagination: { page, limit: 100, total: 300, pages: 3 },
+    };
+  });
+  assert.equal(
+    (await findInstagramPublication("test-key", profile, id, account)).status,
+    "published",
+  );
+  assert.deepEqual(
+    calls.map((call) => call.url.searchParams.get("page")),
+    ["1", "2", "3"],
+  );
+  calls.length = 0;
+  assert.equal(await findInstagramPublication("test-key", profile, randomUUID(), account), null);
+  assert.equal(calls.length, 3);
+});
 test("automation creation sends authorized post, provider profile and idempotency headers", async (t) => {
   const calls = mockSocial(t, ({ url, body }) =>
     body
@@ -535,6 +598,22 @@ test("automation reconciliation avoids duplicate creates and refuses conflicting
     rule: rule(),
   });
   assert.equal(result.automation.id, automationId);
+  const reordered = mockSocial(t, ({ url }) =>
+    url.pathname.endsWith("comment-automations")
+      ? { automations: [automation({ keywords: ["GUIA", "LINK"] })] }
+      : { posts: [{ id: "123_456", message: "Post" }] },
+  );
+  assert.equal(
+    (
+      await mutateAutomation(context(), {
+        action: "create",
+        id: randomUUID(),
+        rule: { ...rule(), keywords: ["LINK", "GUIA"] },
+      })
+    ).automation.id,
+    automationId,
+  );
+  assert.ok(reordered.every((call) => call.options.method === "GET"));
   await assert.rejects(
     mutateAutomation(context(), {
       action: "create",

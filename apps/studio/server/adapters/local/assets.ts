@@ -179,7 +179,24 @@ export async function saveBrandLogo(tenant: string, bytes: Uint8Array) {
   await atomicFile(join(/* turbopackIgnore: true */ directory, name), normalized);
   return name;
 }
-/** Remove logo files no current brand or queued job needs. Never touches generated art. */
+const logoLocks = new Map<string, Promise<unknown>>();
+/**
+ * Serialize logo replacement and pruning per tenant. Without it, a prune that computed its keep
+ * set before an upload finished could delete the logo that was just saved.
+ */
+export function withBrandLogoLock<T>(tenant: string, task: () => Promise<T>): Promise<T> {
+  const run = (logoLocks.get(tenant) ?? Promise.resolve()).catch(() => {}).then(task);
+  const tail = run.catch(() => {});
+  logoLocks.set(tenant, tail);
+  void tail.then(() => {
+    if (logoLocks.get(tenant) === tail) logoLocks.delete(tenant);
+  });
+  return run;
+}
+/**
+ * Remove logo files no current brand or queued job needs. Never touches generated art.
+ * Call inside withBrandLogoLock, computing `keep` within the same lock.
+ */
 export async function pruneBrandLogos(tenant: string, keep: Set<string>) {
   if (keep.has("*")) return;
   const directory = tenantDirectory(tenant);

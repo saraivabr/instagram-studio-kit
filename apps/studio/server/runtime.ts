@@ -22,7 +22,13 @@ import {
   storedBrand,
   storedPerson,
 } from "./adapters/local/repository";
-import { localAssets, loadLogo, loadPersonPhotos, pruneBrandLogos } from "./adapters/local/assets";
+import {
+  localAssets,
+  loadLogo,
+  loadPersonPhotos,
+  pruneBrandLogos,
+  withBrandLogoLock,
+} from "./adapters/local/assets";
 import { mockAiRequest } from "./adapters/demo/ai";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { companyContext } from "@/lib/instagram/brand";
@@ -215,6 +221,7 @@ async function runWorker() {
         person = {
           id: stored.id,
           name: stored.name,
+          consentAt: stored.consent_at,
           photos: await loadPersonPhotos(job.tenant, stored.photos),
         };
       }
@@ -237,18 +244,24 @@ async function runWorker() {
         },
         error,
       );
-      await repository.complete(job.tenant, item.id, {
-        status: "failed",
-        error: `${message} Confira o histórico do provedor antes de tentar novamente; uma nova geração pode ser cobrada.`,
-      });
-      finishJob(job.id, false);
+      try {
+        await repository.complete(job.tenant, item.id, {
+          status: "failed",
+          error: `${message} Confira o histórico do provedor antes de tentar novamente; uma nova geração pode ser cobrada.`,
+        });
+      } finally {
+        // Release the queue even if storage fails; recovery marks the item on the next boot.
+        finishJob(job.id, false);
+      }
     }
     // A replaced logo can go away once the last job that referenced it is done.
-    const current = storedBrand(job.tenant)?.logo_path;
-    await pruneBrandLogos(
-      job.tenant,
-      new Set([...logoPathsInUse(job.tenant), ...(current ? [current] : [])]),
-    );
+    await withBrandLogoLock(job.tenant, () => {
+      const current = storedBrand(job.tenant)?.logo_path;
+      return pruneBrandLogos(
+        job.tenant,
+        new Set([...logoPathsInUse(job.tenant), ...(current ? [current] : [])]),
+      );
+    });
     backoff.success();
   } catch (error) {
     const retry = backoff.failure(error);

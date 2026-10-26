@@ -27,6 +27,11 @@ test("a person is added with consent, offered in creation and removed", async ({
   await expect(page.getByRole("radio", { name: "Sem pessoa" })).toBeChecked();
 
   await page.goto("/app/settings/marca");
+  // Removing deletes the photos for good, so the page asks first.
+  page.once("dialog", (dialog) => {
+    expect(dialog.message()).toContain("Bruno Lima");
+    void dialog.accept();
+  });
   await page.getByRole("button", { name: "Remover", exact: true }).last().click();
   await expect(page.getByText("Pessoa e fotos removidas.")).toBeVisible();
   await expect(page.getByText("Nenhuma pessoa cadastrada ainda.")).toBeVisible();
