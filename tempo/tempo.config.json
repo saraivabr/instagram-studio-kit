@@ -8,8 +8,9 @@
   },
   "apps": [
     {
-      "start": "npm exec --workspace instagram-studio-app -- next dev --hostname 127.0.0.1 --port ${APP_PORT}",
-      "url": "http://127.0.0.1:${APP_PORT}/app/instagram"
+      "appDir": "apps/studio",
+      "start": "npx next dev --hostname 127.0.0.1 --port ${APP_PORT}",
+      "url": "http://127.0.0.1:${APP_PORT}"
     }
   ]
 }
