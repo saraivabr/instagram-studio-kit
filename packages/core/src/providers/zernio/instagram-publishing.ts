@@ -129,10 +129,25 @@ export async function findInstagramPublication(
   validateSocialId(profile);
   validateSocialId(account);
   const publicationId = studioId.parse(id);
-  const response = parseSocialResponse(
-    z.object({ posts: z.array(postSchema) }),
-    await socialRequest(key, `posts?profileId=${encodeURIComponent(profile)}&limit=100`),
+  // A receipt older than the first page must still be found, or the host may resend the post.
+  for (let page = 1; page <= maxReconcilePages; page++) {
+    const response = parseSocialResponse(
+      z.object({
+        posts: z.array(postSchema),
+        pagination: z.object({ pages: z.number().int().nonnegative() }).optional(),
+      }),
+      await socialRequest(
+        key,
+        `posts?profileId=${encodeURIComponent(profile)}&limit=100&page=${page}`,
+      ),
+    );
+    const post = response.posts.find((p) => p.metadata?.studio_publication_id === publicationId);
+    if (post) return publicationResult({ post }, account);
+    if (!response.posts.length || page >= (response.pagination?.pages ?? page)) return null;
+  }
+  throw new SocialError(
+    "Não foi possível confirmar a publicação no histórico recente. Confira a conta antes de reenviar.",
+    409,
   );
-  const post = response.posts.find((p) => p.metadata?.studio_publication_id === publicationId);
-  return post ? publicationResult({ post }, account) : null;
 }
+const maxReconcilePages = 10;

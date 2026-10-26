@@ -1,6 +1,7 @@
 {
   "name": "@saraivabr/instagram-studio-kit",
-  "version": "0.5.0",
+  "private": true,
+  "version": "0.6.0",
   "description": "Núcleo portável de criação de artes, carrosséis e integração Instagram",
   "type": "module",
   "license": "MIT",

@@ -111,9 +111,18 @@ test("legacy migration, restart recovery, ambiguous jobs and transactional quota
   const interrupted = randomUUID();
   const original = { ...item(originalId, "ready"), asset_path: `local/${originalId}.png` };
   const unfinished = item(interrupted);
+  // A carousel slide stored as square before 0.6.0 must not stop the store from opening.
+  const squareSlide = randomUUID();
+  const legacySlide = item(squareSlide, "ready");
+  legacySlide.input = {
+    ...legacySlide.input,
+    format: "square",
+    carousel: { id: randomUUID(), template: "noticia_impacto_operacional", slide: 1 },
+  };
   const legacy = JSON.stringify({
     [JSON.stringify(["local", originalId])]: original,
     [JSON.stringify(["local", interrupted])]: unfinished,
+    [JSON.stringify(["local", squareSlide])]: legacySlide,
   });
   await writeFile(join(directory, "items.json"), legacy);
   const png = Buffer.from(
@@ -127,15 +136,20 @@ test("legacy migration, restart recovery, ambiguous jobs and transactional quota
     assert.equal(migrated.id, originalId.toLowerCase());
     assert.equal((await request(`/api/assets/${originalId}`)).status, 200);
     assert.equal((await ready(interrupted, "failed")).status, "failed");
+    const slide = (await (await request(`/api/v1/instagram/${squareSlide}`)).json()).data;
+    assert.equal(slide.input.format, "feed", "legacy carousel slides migrate as feed");
     assert.equal(await readFile(join(directory, "items.pre-sqlite.json"), "utf8"), legacy);
     const queued = randomUUID();
     const recent = randomUUID();
     const stale = randomUUID();
     const db = new DatabaseSync(join(directory, "studio.sqlite"));
+    // The worker released this job but could not save the item's failure.
+    const orphan = randomUUID();
     for (const [id, state, started] of [
       [queued, "queued", null],
       [recent, "running", new Date().toISOString()],
       [stale, "running", new Date(Date.now() - 11 * 60_000).toISOString()],
+      [orphan, "failed", new Date().toISOString()],
     ]) {
       const value = item(id);
       db.prepare(
@@ -179,6 +193,8 @@ test("legacy migration, restart recovery, ambiguous jobs and transactional quota
     const resumed = await ready(queued, "ready", 10000);
     await ready(newId, "ready", 10000);
     await ready(stale, "failed", 10000);
+    const recoveredOrphan = await ready(orphan, "failed", 10000);
+    assert.equal(recoveredOrphan.can_retry, true, "an orphaned item can be retried again");
     const recoveredDb = new DatabaseSync(join(directory, "studio.sqlite"));
     assert.equal(
       recoveredDb.prepare("SELECT state FROM jobs WHERE item_id=?").get(recent).state,

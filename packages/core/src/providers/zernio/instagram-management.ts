@@ -75,7 +75,11 @@ export async function instagramPosts(key: string, accountId: string) {
     await socialRequest(key, `accounts/${encodeURIComponent(account)}/posts`),
   ).posts;
 }
-export async function instagramAutomations(context: Awaited<ReturnType<typeof instagramContext>>) {
+export async function instagramAutomations(
+  context: Awaited<ReturnType<typeof instagramContext>>,
+  /** Called with how many Instagram rules were skipped because their shape was not recognized. */
+  options?: { onSkipped?: (count: number) => void },
+) {
   validateSocialId(context.profileId);
   const result = parseSocialResponse(
     z.object({
@@ -86,8 +90,16 @@ export async function instagramAutomations(context: Awaited<ReturnType<typeof in
       `comment-automations?profileId=${encodeURIComponent(context.profileId)}`,
     ),
   );
-  return result.automations
+  // One record the provider changed shape on must not hide every other rule.
+  let skipped = 0;
+  const automations = result.automations
     .filter((a) => a.platform === "instagram")
-    .map((a) => parseSocialResponse(automationSchema, a))
+    .flatMap((a) => {
+      const parsed = automationSchema.safeParse(a);
+      if (!parsed.success) skipped++;
+      return parsed.success ? [parsed.data] : [];
+    })
     .filter((a) => context.accounts.some((account) => account._id === a.accountId));
+  if (skipped) options?.onSkipped?.(skipped);
+  return automations;
 }

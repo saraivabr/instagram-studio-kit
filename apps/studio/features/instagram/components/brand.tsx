@@ -91,13 +91,15 @@ export function BrandSettings({
       router.refresh();
     });
   };
-  const remove = () =>
-    run(async () => {
+  const remove = () => {
+    if (!window.confirm(t("Remover o logo da marca? As próximas artes sairão sem ele."))) return;
+    return run(async () => {
       const brand = await brandApi("/logo", { method: "DELETE" });
       setLogoUrl(brand.logo_url);
       setSaved(true);
       router.refresh();
     });
+  };
   const preview = (background: string) => (
     <div
       className="flex h-28 items-center justify-center rounded-2xl border border-border p-4"
@@ -318,11 +320,19 @@ function BrandPeople({ canEdit, initial }: { canEdit: boolean; initial: BrandPer
       return t("Pessoa adicionada. Ela já pode ser incluída nas próximas artes.");
     });
   };
-  const remove = (person: BrandPersonView) =>
-    run(async () => {
+  const remove = (person: BrandPersonView) => {
+    // Photos are deleted for good; removal is how consent is withdrawn.
+    if (
+      !window.confirm(
+        `${t("Remover")} ${person.name}? ${t("As fotos serão apagadas e não poderão ser recuperadas.")}`,
+      )
+    )
+      return;
+    return run(async () => {
       setPeople(await peopleApi(`/${person.id}`, { method: "DELETE" }));
       return t("Pessoa e fotos removidas.");
     });
+  };
   return (
     <section aria-labelledby="brand-people" className="mt-12 max-w-2xl space-y-6">
       <div className="space-y-2">

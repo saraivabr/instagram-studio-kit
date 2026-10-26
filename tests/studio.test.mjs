@@ -121,6 +121,42 @@ test("storage failure preserves failed state", async () => {
   await assert.rejects(studio.create("a", i));
   assert.equal((await studio.create("a", i)).status, "failed");
 });
+test("generateClaimed fails a claimed item when its stored input is invalid", async () => {
+  const h = harness();
+  const i = input();
+  await h.repository.claim("a", createSchema.parse(i));
+  await assert.rejects(h.studio.generateClaimed("a", { ...i, brief: "x" }));
+  const item = await h.repository.complete("a", i.id, {});
+  assert.equal(item.status, "failed");
+  assert.equal(h.calls.length, 0);
+});
+test("a storage failure while marking failed keeps the original error", async () => {
+  const h = harness(() => {
+    throw new Error("provider unavailable");
+  });
+  const i = input();
+  await h.repository.claim("a", createSchema.parse(i));
+  const studio = createStudio({
+    ai: createAi(
+      async () => {
+        throw new Error("provider unavailable");
+      },
+      { image: "i", text: "t" },
+    ),
+    repository: {
+      claim: h.repository.claim,
+      async complete() {
+        throw new Error("storage down");
+      },
+    },
+    assets: { save: async () => "x" },
+  });
+  await assert.rejects(studio.generateClaimed("a", i), (error) => {
+    assert.equal(error.message, "provider unavailable");
+    assert.equal(error.cause?.message, "storage down");
+    return true;
+  });
+});
 test("invalid input and logo do not call provider", async () => {
   const h = harness();
   await assert.rejects(h.studio.create("a", { ...input(), brief: "x" }));
@@ -267,10 +303,20 @@ test("stamp mode hands the original logo to the asset store, AI mode does not", 
 
 test("a requested person must match, carry valid photos and reach the provider", async () => {
   const face = { bytes: new Uint8Array(Buffer.from(png, "base64")), type: "image/png" };
-  const person = { id: randomUUID(), name: "Ana", photos: [face] };
+  const person = {
+    id: randomUUID(),
+    name: "Ana",
+    photos: [face],
+    consentAt: new Date().toISOString(),
+  };
   const h = harness();
   const withPerson = { ...input(), use_logo: false, person_id: person.id };
   await assert.rejects(h.studio.create("a", withPerson), /Pessoa não encontrada/);
+  for (const consentAt of [undefined, "", "ontem", "03/04/2025", "2025-04-03"])
+    await assert.rejects(
+      h.studio.create("a", withPerson, undefined, undefined, { ...person, consentAt }),
+      /Autorização de uso de imagem/,
+    );
   await assert.rejects(
     h.studio.create("a", withPerson, undefined, undefined, { ...person, id: randomUUID() }),
     /Pessoa não encontrada/,

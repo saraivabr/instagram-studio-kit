@@ -1,5 +1,23 @@
 # Mudanças
 
+## 0.6.0 · 25/10/2026
+
+Correções da análise de 25/10/2026.
+
+- **Compatibilidade (SDK):** `BrandPerson.consentAt` (instante ISO 8601 com fuso, como `toISOString()`) passa a ser obrigatório no tipo e exigido por `create`/`generateClaimed` quando há `person_id`. Hosts devem repassar a data em que registraram a autorização; o app já envia `consent_at`.
+- **Compatibilidade (SDK):** carrossel só aceita `format: "feed"`, a proporção 4:5 que o brief dos slides descreve. O app já enviava `feed`.
+- `safeSource` recusa hosts internos (localhost, `.local`, IPs de loopback, privados, link-local, CGNAT e IPv6 equivalentes, inclusive com ponto final) em mídias de publicação e citações de pesquisa. Só o nome literal é checado: um nome público que resolve para endereço interno deve ser bloqueado por quem faz o fetch.
+- `generateClaimed` marca como falha um item com entrada inválida, em vez de deixá-lo em `generating`. Se gravar a falha também der erro, o erro original é mantido e o de armazenamento vai em `cause`.
+- Worker: a fila é liberada mesmo quando gravar a falha do item dá erro. Antes o job ficava `running` e bloqueava a fila por 10 minutos. Um item que ficou em `generating` com o job já encerrado é marcado como falha na próxima busca da fila e no boot, e pode ser tentado de novo.
+- Remover uma pessoa durante uma geração: o worker confere de novo se ela continua cadastrada imediatamente antes de enviar as fotos ao provedor de imagem, depois da chamada da legenda.
+- Carrosséis antigos em quadrado ou story continuam carregando: a migração de `items.json` e a nova tentativa os tratam como feed.
+- Logo: troca e limpeza de logos da mesma organização são serializadas. Antes, uma limpeza concorrente podia apagar o logo recém-enviado.
+- Conferência de publicação percorre até 10 páginas de 100 posts da Zernio, em vez de só os 100 mais recentes.
+- Automações: palavras-chave na mesma regra em outra ordem não geram mais conflito 409; um registro malformado da Zernio é ignorado em vez de derrubar a lista inteira, e a tela avisa quantas regras não puderam ser lidas (`instagramAutomations(context, { onSkipped })`).
+- Tela inicial mostra o motivo quando a Zernio não está configurada, em vez de "Nenhuma regra". Remover o logo ou uma pessoa pede confirmação. O seletor de carrossel em Publicar carrega mais criações sob demanda.
+- O pacote do SDK é `private`: `npm pack` continua funcionando, `npm publish` acidental é bloqueado. Documentação atualizada para o tarball 0.6.0.
+- CI: execuções concorrentes do mesmo branch são canceladas, há limite de tempo e o tarball é instalado num projeto vazio para conferir os subpaths exportados.
+
 ## 0.5.0 · 25/10/2026
 
 Parte opcional do pedido "Minha marca": rosto de uma pessoa nas artes.

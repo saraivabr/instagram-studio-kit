@@ -22,6 +22,16 @@ export type JobContext = {
 };
 export type Job = { id: string; tenant: string; item_id: string; context: JobContext };
 const state = globalThis as typeof globalThis & { studioDb?: DatabaseSync };
+/**
+ * Carousels are feed (4:5) since 0.6.0. An older stored carousel slide in square or story still
+ * loads, and a retry of it is generated as feed, instead of making the whole store unreadable.
+ */
+export function legacyInput(input: unknown): unknown {
+  const value = input as { kind?: unknown; carousel?: unknown; format?: unknown } | null;
+  return value?.kind === "post" && value.carousel && value.format !== "feed"
+    ? { ...value, format: "feed" }
+    : input;
+}
 function transaction<T>(db: DatabaseSync, run: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -106,7 +116,7 @@ export function database() {
           !item
         )
           throw new Error("Invalid legacy record");
-        const input = createSchema.parse(item.input);
+        const input = createSchema.parse(legacyInput(item.input));
         if (
           String(pair[1]).toLowerCase() !== input.id ||
           item.id.toLowerCase() !== input.id ||
@@ -406,6 +416,17 @@ function interruptJobs(db: DatabaseSync, jobs: { id: string; tenant: string; ite
     db.prepare("UPDATE jobs SET state='failed' WHERE id=? AND state='running'").run(job.id);
   }
 }
+/**
+ * Jobs already finished whose item is still "generating": the worker released the queue but
+ * could not save the item's failure. Fail the item so it can be retried or archived.
+ */
+function orphanedItems(db: DatabaseSync) {
+  return db
+    .prepare(
+      "SELECT j.id,j.tenant,j.item_id FROM jobs j JOIN items i ON i.tenant=j.tenant AND i.id=j.item_id WHERE j.state IN ('failed','completed') AND i.status='generating'",
+    )
+    .all() as { id: string; tenant: string; item_id: string }[];
+}
 /** Local adapter supports one server process per store. Never replay an ambiguous paid call. */
 export function recoverInterruptedJobs() {
   const db = database();
@@ -415,7 +436,7 @@ export function recoverInterruptedJobs() {
       tenant: string;
       item_id: string;
     }[];
-    interruptJobs(db, jobs);
+    interruptJobs(db, [...jobs, ...orphanedItems(db)]);
   });
 }
 export function claimJob(): Job | undefined {
@@ -428,7 +449,7 @@ export function claimJob(): Job | undefined {
       tenant: string;
       item_id: string;
     }[];
-    interruptJobs(db, stale);
+    interruptJobs(db, [...stale, ...orphanedItems(db)]);
     if (db.prepare("SELECT id FROM jobs WHERE state='running' LIMIT 1").get()) return;
     const row = db
       .prepare(

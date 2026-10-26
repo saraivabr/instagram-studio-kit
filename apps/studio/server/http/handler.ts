@@ -37,6 +37,7 @@ import {
 import {
   saveBrandLogo,
   pruneBrandLogos,
+  withBrandLogoLock,
   readBrandLogo,
   savePersonPhoto,
   readPersonPhoto,
@@ -306,6 +307,7 @@ export async function handleStudioRequest(req: NextRequest) {
           can_edit: [`admin`, `owner`, `editor`].includes(context.role),
         };
       };
+      // Runs inside withBrandLogoLock, so the keep set reflects the latest replacement.
       const cleanup = async () =>
         pruneBrandLogos(
           tenant,
@@ -342,12 +344,12 @@ export async function handleStudioRequest(req: NextRequest) {
         });
       }
       ensureWrite();
-      if (req.method === "POST") {
-        const name = await saveBrandLogo(tenant, await readLogoUpload(req));
-        replaceBrandLogo(tenant, name);
-      } else replaceBrandLogo(tenant, null);
-      // Jobs already queued keep their own logo file until they finish.
-      await cleanup();
+      const upload = req.method === "POST" ? await readLogoUpload(req) : null;
+      await withBrandLogoLock(tenant, async () => {
+        replaceBrandLogo(tenant, upload ? await saveBrandLogo(tenant, upload) : null);
+        // Jobs already queued keep their own logo file until they finish.
+        await cleanup();
+      });
       return respond(await view());
     }
     if (path === "/api/v1/instagram/config") {

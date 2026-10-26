@@ -2,7 +2,7 @@
 
 SDK TypeScript para artes, carrosséis, legendas e pesquisa, com adapters Instagram via Zernio. Independente de Next.js e do CRM; licença MIT.
 
-A versão **0.2.0** é distribuída por tarball, sem publicação no registro npm. No repositório, rode `npm ci` e `npm run pack:core`; instale `saraivabr-instagram-studio-kit-0.2.0.tgz` no produto anfitrião. O workspace completo requer Node.js 22.13 ou superior por seu adapter SQLite local.
+A versão **0.6.0** é distribuída por tarball, sem publicação no registro npm. No repositório, rode `npm ci` e `npm run pack:core`; instale `saraivabr-instagram-studio-kit-0.6.0.tgz` no produto anfitrião. O workspace completo requer Node.js 22.13 ou superior por seu adapter SQLite local.
 
 ```ts
 import { createStudio } from "@saraivabr/instagram-studio-kit/studio";

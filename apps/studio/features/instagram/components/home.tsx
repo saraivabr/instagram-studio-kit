@@ -46,6 +46,7 @@ export function InstagramHome() {
   const [triggers, setTriggers] = useState<InstagramAutomation[]>([]);
   const [loadingGrowth, setLoadingGrowth] = useState(true);
   const [growthError, setGrowthError] = useState(false);
+  const [growthNotice, setGrowthNotice] = useState("");
   const [growthOrg, setGrowthOrg] = useState<string | undefined>();
   const growthLoading = loadingGrowth || growthOrg !== orgId;
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export function InstagramHome() {
     const controller = new AbortController();
     setTriggers([]);
     setGrowthError(false);
+    setGrowthNotice("");
     setLoadingGrowth(true);
     setGrowthOrg(orgId);
     async function loadGrowth() {
@@ -65,7 +67,10 @@ export function InstagramHome() {
         if (!res.ok) throw new Error("growth unavailable");
         const data = await res.json();
         if (!Array.isArray(data.data?.automations)) throw new Error("growth response invalid");
-        if (active) setTriggers(data.data.automations);
+        if (!active) return;
+        setTriggers(data.data.automations);
+        // Without Zernio the API explains what is missing; an empty list alone would mislead.
+        setGrowthNotice(typeof data.data.message === "string" ? data.data.message : "");
       } catch {
         if (active) setGrowthError(true);
       } finally {
@@ -611,16 +616,19 @@ export function InstagramHome() {
             <div className="mb-3 rounded-full bg-muted p-3 text-muted-foreground">
               <ChatCircleDots size={28} />
             </div>
-            <h3 className="text-base font-semibold">{t("Nenhuma regra de automação ativa")}</h3>
+            <h3 className="text-base font-semibold">
+              {growthNotice ? t("Automações indisponíveis") : t("Nenhuma regra de automação ativa")}
+            </h3>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">
-              {t(
-                'Configure gatilhos para palavras como "EU QUERO", "PREÇO" ou "AULA" e envie seu link de vendas ou agendamento automaticamente por DM.',
-              )}
+              {growthNotice ||
+                t(
+                  'Configure gatilhos para palavras como "EU QUERO", "PREÇO" ou "AULA" e envie seu link de vendas ou agendamento automaticamente por DM.',
+                )}
             </p>
             <Button asChild size="sm" className="mt-4 gap-2">
               <Link href="/app/instagram/growth">
                 <Plus size={16} weight="bold" />
-                {t("Criar Primeiro Gatilho")}
+                {growthNotice ? t("Ver automações") : t("Criar Primeiro Gatilho")}
               </Link>
             </Button>
           </div>
